@@ -11,7 +11,10 @@ import { useState, useRef, useEffect } from 'react';
 interface PluginContext {
   pluginId: string;
   project: { name: string; path: string; currentBranch: string } | null;
-  actions: { showToast: (msg: string, type?: 'success' | 'error') => void };
+  actions: {
+    showToast: (msg: string, type?: 'success' | 'error') => void;
+    openUrl: (url: string) => void;
+  };
   invoke: { call: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T> };
 }
 
@@ -57,6 +60,7 @@ function VercelToolbar() {
   const project = ctx.project;
   const invoke = ctx.invoke;
   const toast = ctx.actions.showToast;
+  const openUrl = ctx.actions.openUrl;
 
   const [cliStatus, setCliStatus] = useState<VercelCliStatus | null>(null);
   const [projectStatus, setProjectStatus] = useState<ProjectVercelStatus | null>(null);
@@ -191,7 +195,7 @@ function VercelToolbar() {
       >
         <button
           className="vercel-button vercel-linked"
-          onClick={() => window.open(dashboardUrl, '_blank')}
+          onClick={() => openUrl(dashboardUrl)}
           title="Open Vercel dashboard"
         >
           <VercelIcon />
@@ -204,7 +208,7 @@ function VercelToolbar() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(`https://${productionUrl}`, '_blank');
+                    openUrl(`https://${productionUrl}`);
                   }}
                 >
                   <span className="vercel-site-badge vercel-site-badge-prod">Prod</span>
@@ -216,7 +220,7 @@ function VercelToolbar() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(`https://${previewUrl}`, '_blank');
+                    openUrl(`https://${previewUrl}`);
                   }}
                 >
                   <span className="vercel-site-badge vercel-site-badge-preview">Preview</span>

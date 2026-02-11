@@ -10,6 +10,7 @@ function VercelToolbar() {
   const project = ctx.project;
   const invoke = ctx.invoke;
   const toast = ctx.actions.showToast;
+  const openUrl = ctx.actions.openUrl;
   const [cliStatus, setCliStatus] = useState(null);
   const [projectStatus, setProjectStatus] = useState(null);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -122,7 +123,7 @@ function VercelToolbar() {
             "button",
             {
               className: "vercel-button vercel-linked",
-              onClick: () => window.open(dashboardUrl, "_blank"),
+              onClick: () => openUrl(dashboardUrl),
               title: "Open Vercel dashboard",
               children: /* @__PURE__ */ jsx(VercelIcon, {})
             }
@@ -133,7 +134,7 @@ function VercelToolbar() {
               {
                 onClick: (e) => {
                   e.stopPropagation();
-                  window.open(`https://${productionUrl}`, "_blank");
+                  openUrl(`https://${productionUrl}`);
                 },
                 children: [
                   /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-prod", children: "Prod" }),
@@ -147,7 +148,7 @@ function VercelToolbar() {
               {
                 onClick: (e) => {
                   e.stopPropagation();
-                  window.open(`https://${previewUrl}`, "_blank");
+                  openUrl(`https://${previewUrl}`);
                 },
                 children: [
                   /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-preview", children: "Preview" }),
