@@ -295,6 +295,7 @@ function VercelToolbar() {
   const toast = ctx.actions.showToast;
   const openUrl = ctx.actions.openUrl;
   const [cliStatus, setCliStatus] = useState(null);
+  const [hasGitRemote, setHasGitRemote] = useState(false);
   const [projectStatus, setProjectStatus] = useState(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -329,6 +330,8 @@ function VercelToolbar() {
   }, [project == null ? void 0 : project.path]);
   const checkStatus = async () => {
     try {
+      const remoteResult = await shell.exec("git", ["remote", "-v"]);
+      setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
       const versionResult = await shell.exec("vercel", ["--version"]);
       const installed = versionResult.exit_code === 0;
       if (!installed) {
@@ -425,6 +428,7 @@ function VercelToolbar() {
   };
   if (!cliStatus) return null;
   if (!project) return null;
+  if (!hasGitRemote && (projectStatus == null ? void 0 : projectStatus.status) !== "connected") return null;
   if (!cliStatus.installed) {
     return /* @__PURE__ */ jsxs(
       "button",

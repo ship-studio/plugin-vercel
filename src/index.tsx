@@ -354,6 +354,7 @@ function VercelToolbar() {
   const openUrl = ctx.actions.openUrl;
 
   const [cliStatus, setCliStatus] = useState<VercelCliStatus | null>(null);
+  const [hasGitRemote, setHasGitRemote] = useState(false);
   const [projectStatus, setProjectStatus] = useState<ProjectVercelStatus | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -393,6 +394,10 @@ function VercelToolbar() {
 
   const checkStatus = async () => {
     try {
+      // Check if git remote is configured
+      const remoteResult = await shell.exec('git', ['remote', '-v']);
+      setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
+
       // Check if vercel CLI is installed
       const versionResult = await shell.exec('vercel', ['--version']);
       const installed = versionResult.exit_code === 0;
@@ -514,6 +519,9 @@ function VercelToolbar() {
 
   // Don't show unless we have a project open
   if (!project) return null;
+
+  // Hide until a git remote is configured (unless already connected)
+  if (!hasGitRemote && projectStatus?.status !== 'connected') return null;
 
   // ---- Install CLI ----
   if (!cliStatus.installed) {
