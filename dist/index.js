@@ -609,19 +609,23 @@ function VercelToolbar() {
       if (selectedScope) {
         linkArgs.push("--scope", selectedScope);
       }
-      const linkResult = await shell.exec("vercel", linkArgs);
+      const linkResult = await shell.exec("vercel", linkArgs, { timeout: 12e4 });
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || "Failed to link project");
       }
       await saveLinkMetadata(linkResult);
-      const deployArgs = ["--prod", "--yes"];
-      if (selectedScope) {
-        deployArgs.push("--scope", selectedScope);
-      }
-      const deployResult = await shell.exec("vercel", deployArgs);
-      if (deployResult.exit_code === 0) {
-        toast("Deployed to Vercel!", "success");
-      } else {
+      try {
+        const deployArgs = ["--prod", "--yes"];
+        if (selectedScope) {
+          deployArgs.push("--scope", selectedScope);
+        }
+        const deployResult = await shell.exec("vercel", deployArgs, { timeout: 12e4 });
+        if (deployResult.exit_code === 0) {
+          toast("Deployed to Vercel!", "success");
+        } else {
+          toast("Connected to Vercel! Deploy may still be running.", "success");
+        }
+      } catch {
         toast("Connected to Vercel! Deploy is still running.", "success");
       }
       await checkStatus();

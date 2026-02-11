@@ -304,7 +304,8 @@ interface PluginContext {
   shell: {
     exec: (
       command: string,
-      args: string[]
+      args: string[],
+      options?: { timeout?: number }
     ) => Promise<{ stdout: string; stderr: string; exit_code: number }>;
   };
 }
@@ -730,28 +731,32 @@ function VercelToolbar() {
     setShowDeployModal(false);
     setError(null);
     try {
-      // Step 1: Link the project (fast, <30s)
+      // Step 1: Link the project
       const linkArgs = ['link', '--yes', '--project', deployName.trim()];
       if (selectedScope) {
         linkArgs.push('--scope', selectedScope);
       }
-      const linkResult = await shell.exec('vercel', linkArgs);
+      const linkResult = await shell.exec('vercel', linkArgs, { timeout: 120_000 });
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
 
       await saveLinkMetadata(linkResult);
 
-      // Step 2: Attempt production deploy (may timeout at 30s)
-      const deployArgs = ['--prod', '--yes'];
-      if (selectedScope) {
-        deployArgs.push('--scope', selectedScope);
-      }
-      const deployResult = await shell.exec('vercel', deployArgs);
-      if (deployResult.exit_code === 0) {
-        toast('Deployed to Vercel!', 'success');
-      } else {
-        // Deploy failed or timed out — project is still linked
+      // Step 2: Production deploy — may take up to 2 minutes
+      try {
+        const deployArgs = ['--prod', '--yes'];
+        if (selectedScope) {
+          deployArgs.push('--scope', selectedScope);
+        }
+        const deployResult = await shell.exec('vercel', deployArgs, { timeout: 120_000 });
+        if (deployResult.exit_code === 0) {
+          toast('Deployed to Vercel!', 'success');
+        } else {
+          toast('Connected to Vercel! Deploy may still be running.', 'success');
+        }
+      } catch {
+        // Deploy timed out or failed — project is still linked
         toast('Connected to Vercel! Deploy is still running.', 'success');
       }
 
