@@ -4,16 +4,5 @@
   "version": "1.0.0",
   "description": "Deploy to Vercel directly from Ship Studio",
   "author": "Ship Studio",
-  "slots": ["toolbar"],
-  "required_commands": [
-    "check_vercel_cli_status",
-    "get_vercel_username",
-    "get_project_vercel_status",
-    "link_to_vercel",
-    "get_vercel_teams",
-    "list_vercel_projects",
-    "write_vercel_project_json",
-    "install_vercel_cli",
-    "deploy_to_vercel"
-  ]
+  "slots": ["toolbar"]
 }

@@ -2,9 +2,297 @@
  * Vercel Plugin for Ship Studio
  *
  * Provides Vercel deployment integration via the toolbar slot.
- * Uses the invoke proxy to call Tauri Vercel commands.
+ * Uses shell.exec() to call Vercel CLI directly.
  */
 import { useState, useRef, useEffect } from 'react';
+
+// ============ CSS injection ============
+
+const VERCEL_CSS = `
+/* Vercel Integration - Workspace Header */
+.vercel-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  min-height: 32px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+
+.vercel-button svg {
+  flex-shrink: 0;
+}
+
+.vercel-button.vercel-install,
+.vercel-button.vercel-connect {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.vercel-button.vercel-install:hover,
+.vercel-button.vercel-connect:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.vercel-button.vercel-linked {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.vercel-button.vercel-linked:hover {
+  background: var(--border);
+  border-color: var(--text-muted);
+}
+
+.vercel-button.vercel-linked svg {
+  color: var(--text-muted);
+}
+
+.vercel-button.vercel-linked:hover svg {
+  color: var(--text-secondary);
+}
+
+.vercel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.vercel-error {
+  color: var(--error);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+/* Vercel Modal */
+.vercel-modal {
+  max-width: 480px;
+}
+
+/* Link mode toggle */
+.vercel-link-mode-toggle {
+  display: flex;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 0;
+}
+
+.vercel-link-mode-toggle button {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.vercel-link-mode-toggle button:hover {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.vercel-link-mode-toggle button.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--text-primary);
+  background: transparent;
+}
+
+/* Loading spinner */
+.vercel-form-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.vercel-form-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.vercel-form-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.vercel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.vercel-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.vercel-form input {
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.vercel-form input:focus {
+  border-color: var(--accent);
+}
+
+.vercel-form .vercel-error {
+  margin-left: 0;
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.vercel-button.vercel-deploying {
+  background: #000;
+  color: #fff;
+  cursor: wait;
+  height: 32px;
+  box-sizing: border-box;
+}
+
+.vercel-button.vercel-deploying .deploying-text {
+  animation: deployPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes deployPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.vercel-button.vercel-setup {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.vercel-button.vercel-setup:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.vercel-button.vercel-checking {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: wait;
+}
+
+.vercel-button.vercel-checking .checking-text {
+  animation: deployPulse 1.5s ease-in-out infinite;
+}
+
+/* Vercel Site Dropdown */
+.vercel-button-container {
+  position: relative;
+}
+
+.vercel-site-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  padding-top: 4px;
+  z-index: 100;
+}
+
+.vercel-site-dropdown-inner {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 200px;
+  max-width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.vercel-site-dropdown-inner button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.vercel-site-dropdown-inner button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.vercel-site-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.vercel-site-badge-prod {
+  color: rgba(74, 222, 128, 0.9);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.vercel-site-badge-preview {
+  color: rgba(96, 165, 250, 0.9);
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.vercel-site-url {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vercel-site-dropdown-inner button svg {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.vercel-site-dropdown-inner button:hover svg {
+  opacity: 1;
+}
+`;
 
 // ============ SDK access via window globals ============
 
@@ -15,7 +303,12 @@ interface PluginContext {
     showToast: (msg: string, type?: 'success' | 'error') => void;
     openUrl: (url: string) => void;
   };
-  invoke: { call: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T> };
+  shell: {
+    exec: (
+      command: string,
+      args: string[]
+    ) => Promise<{ stdout: string; stderr: string; exit_code: number }>;
+  };
 }
 
 function getCtx(): PluginContext {
@@ -26,7 +319,7 @@ function getCtx(): PluginContext {
   return ctx;
 }
 
-// ============ Types (mirrored from host) ============
+// ============ Types ============
 
 interface VercelCliStatus {
   installed: boolean;
@@ -58,7 +351,7 @@ interface VercelProject {
 function VercelToolbar() {
   const ctx = getCtx();
   const project = ctx.project;
-  const invoke = ctx.invoke;
+  const shell = ctx.shell;
   const toast = ctx.actions.showToast;
   const openUrl = ctx.actions.openUrl;
 
@@ -81,6 +374,17 @@ function VercelToolbar() {
   const [optimisticLinked, setOptimisticLinked] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Inject CSS on mount, remove on unmount
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.setAttribute('data-vercel-plugin', 'true');
+    style.textContent = VERCEL_CSS;
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
+
   // Check CLI status on mount and when project changes
   useEffect(() => {
     void checkStatus();
@@ -91,27 +395,128 @@ function VercelToolbar() {
 
   const checkStatus = async () => {
     try {
-      const status = await invoke.call<VercelCliStatus>('check_vercel_cli_status');
-      setCliStatus(status);
+      // Check if vercel CLI is installed
+      const versionResult = await shell.exec('vercel', ['--version']);
+      const installed = versionResult.exit_code === 0;
 
-      if (status.authenticated && project?.path) {
-        const vs = await invoke
-          .call<ProjectVercelStatus>('get_project_vercel_status', {
-            projectPath: project.path,
-          })
-          .catch(
-            (): ProjectVercelStatus => ({
+      if (!installed) {
+        setCliStatus({ installed: false, authenticated: false });
+        return;
+      }
+
+      // Check if authenticated
+      const whoamiResult = await shell.exec('vercel', ['whoami']);
+      const authenticated = whoamiResult.exit_code === 0;
+
+      setCliStatus({ installed: true, authenticated });
+
+      if (authenticated && project?.path) {
+        // Read .vercel/project.json to check link status
+        const catResult = await shell.exec('cat', ['.vercel/project.json']);
+        if (catResult.exit_code !== 0) {
+          setProjectStatus({
+            status: 'not-linked',
+            project_name: null,
+            vercel_org: null,
+            production_url: null,
+            staging_url: null,
+          });
+          return;
+        }
+
+        try {
+          const projectJson = JSON.parse(catResult.stdout);
+          const projectId = projectJson.projectId;
+          const orgId = projectJson.orgId;
+
+          if (!projectId || !orgId) {
+            setProjectStatus({
               status: 'not-linked',
               project_name: null,
               vercel_org: null,
               production_url: null,
               staging_url: null,
-            })
-          );
-        setProjectStatus(vs);
+            });
+            return;
+          }
+
+          // Get project details and URLs via vercel inspect or alias ls
+          // Use vercel project ls to find the project name
+          const inspectArgs = ['inspect', '--json'];
+          const inspectResult = await shell.exec('vercel', inspectArgs).catch(() => null);
+
+          let projectName: string | null = null;
+          let productionUrl: string | null = null;
+          let vercelOrg: string | null = null;
+
+          // Try to get project info from vercel ls
+          const lsArgs = ['ls', '--json', '-n', '1'];
+          const lsResult = await shell.exec('vercel', lsArgs).catch(() => null);
+          if (lsResult && lsResult.exit_code === 0) {
+            try {
+              const lsData = JSON.parse(lsResult.stdout);
+              const deployments = lsData.deployments || lsData;
+              if (Array.isArray(deployments) && deployments.length > 0) {
+                const dep = deployments[0];
+                projectName = dep.name || null;
+                if (dep.url) productionUrl = dep.url;
+                if (dep.alias && dep.alias.length > 0) productionUrl = dep.alias[0];
+              }
+            } catch {
+              // ignore parse errors
+            }
+          }
+
+          // If we still don't have a project name, try reading it from project.json name field
+          if (!projectName && projectJson.projectName) {
+            projectName = projectJson.projectName;
+          }
+
+          // Try to get the org slug for dashboard URL
+          if (orgId) {
+            const teamsResult = await shell.exec('vercel', ['team', 'ls', '--no-color']).catch(() => null);
+            if (teamsResult && teamsResult.exit_code === 0) {
+              const lines = teamsResult.stdout.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('─') || trimmed.startsWith('ID')) continue;
+                // Team table: columns separated by whitespace
+                const parts = trimmed.split(/\s{2,}/);
+                if (parts.length >= 2) {
+                  const slug = parts[0].replace(/\s+$/, '').replace(/^\s+/, '');
+                  // Check if this is the matching team by comparing IDs
+                  const id = parts.length >= 3 ? parts[parts.length - 1].trim() : '';
+                  if (id === orgId || slug) {
+                    vercelOrg = slug;
+                    break;
+                  }
+                }
+              }
+            }
+            // If no team found, it might be a personal account - use whoami
+            if (!vercelOrg) {
+              vercelOrg = whoamiResult.stdout.trim();
+            }
+          }
+
+          setProjectStatus({
+            status: 'connected',
+            project_name: projectName,
+            vercel_org: vercelOrg,
+            production_url: productionUrl,
+            staging_url: null,
+          });
+        } catch {
+          setProjectStatus({
+            status: 'not-linked',
+            project_name: null,
+            vercel_org: null,
+            production_url: null,
+            staging_url: null,
+          });
+        }
       }
     } catch {
-      // CLI not available
       setCliStatus({ installed: false, authenticated: false });
     }
   };
@@ -130,10 +535,17 @@ function VercelToolbar() {
         onClick={async () => {
           setIsInstalling(true);
           try {
-            await invoke.call('install_vercel_cli');
+            // Try brew first, fallback to npm
+            const brewResult = await shell.exec('brew', ['install', 'vercel-cli']);
+            if (brewResult.exit_code !== 0) {
+              const npmResult = await shell.exec('npm', ['install', '-g', 'vercel']);
+              if (npmResult.exit_code !== 0) {
+                throw new Error('Failed to install via brew and npm');
+              }
+            }
             toast('Vercel CLI installed!', 'success');
             await checkStatus();
-          } catch (e) {
+          } catch {
             toast('Failed to install Vercel CLI', 'error');
           } finally {
             setIsInstalling(false);
@@ -259,9 +671,24 @@ function VercelToolbar() {
     setIsLoadingProjects(true);
     setSelectedProjectId('');
     try {
-      const projects = await invoke.call<VercelProject[]>('list_vercel_projects', {
-        scope: scope || '',
-      });
+      const args = ['project', 'ls', '--json'];
+      if (scope) {
+        args.push('--scope', scope);
+      }
+      const result = await shell.exec('vercel', args);
+      if (result.exit_code !== 0) {
+        setExistingProjects([]);
+        return;
+      }
+      const parsed = JSON.parse(result.stdout);
+      const orgId = scope || 'personal';
+      const projects: VercelProject[] = (parsed.projects || [])
+        .filter((p: { name?: string; id?: string }) => p.name && p.id)
+        .map((p: { name: string; id: string }) => ({
+          id: p.id,
+          name: p.name,
+          orgId,
+        }));
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
@@ -275,15 +702,31 @@ function VercelToolbar() {
     setIsDeploying(true);
     setError(null);
     try {
-      await invoke.call<string>('deploy_to_vercel', {
-        options: {
-          projectPath: project.path,
-          projectName: deployName,
-          scope: selectedScope,
-        },
-      });
+      // Step 1: Link the project (fast, <30s)
+      const linkArgs = ['link', '--yes', '--project', deployName.trim()];
+      if (selectedScope) {
+        linkArgs.push('--scope', selectedScope);
+      }
+      const linkResult = await shell.exec('vercel', linkArgs);
+      if (linkResult.exit_code !== 0) {
+        throw new Error(linkResult.stderr || 'Failed to link project');
+      }
+
       setShowDeployModal(false);
       toast('Connected to Vercel!', 'success');
+
+      // Step 2: Attempt production deploy (may timeout at 30s)
+      try {
+        const deployArgs = ['--prod', '--yes'];
+        if (selectedScope) {
+          deployArgs.push('--scope', selectedScope);
+        }
+        await shell.exec('vercel', deployArgs);
+      } catch {
+        // Deploy may have timed out — project is still linked
+        toast('Deploy may still be running in the background', 'success');
+      }
+
       await checkStatus();
     } catch (e) {
       setError(String(e));
@@ -298,12 +741,20 @@ function VercelToolbar() {
     setIsLinking(true);
     setError(null);
     try {
-      await invoke.call('write_vercel_project_json', {
-        projectPath: project.path,
-        projectId: proj.id,
-        orgId: proj.orgId,
-        projectName: proj.name,
-      });
+      // Create .vercel directory
+      await shell.exec('mkdir', ['-p', '.vercel']);
+
+      // Write project.json
+      const projectJsonContent = JSON.stringify(
+        { projectId: proj.id, orgId: proj.orgId, projectName: proj.name },
+        null,
+        2
+      );
+      await shell.exec('node', [
+        '-e',
+        `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(projectJsonContent)})`,
+      ]);
+
       setShowDeployModal(false);
       setOptimisticLinked(true);
       toast('Linked to Vercel project!', 'success');
@@ -325,7 +776,47 @@ function VercelToolbar() {
     setIsLoadingTeams(true);
 
     try {
-      const fetchedTeams = await invoke.call<VercelTeam[]>('get_vercel_teams');
+      // Parse teams from `vercel team ls --no-color`
+      const result = await shell.exec('vercel', ['team', 'ls', '--no-color']);
+      if (result.exit_code !== 0) {
+        setTeams([]);
+        setSelectedScope(undefined);
+        return;
+      }
+
+      const fetchedTeams: VercelTeam[] = [];
+      const lines = result.stdout.split('\n');
+      let headerPassed = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Skip until we pass the separator line (dashes)
+        if (trimmed.startsWith('─') || trimmed.includes('───')) {
+          headerPassed = true;
+          continue;
+        }
+        if (!headerPassed) continue;
+
+        // Parse table row - columns separated by 2+ spaces
+        const parts = trimmed.split(/\s{2,}/);
+        if (parts.length < 2) continue;
+
+        // Detect current team marker (arrow or asterisk at start)
+        const isCurrent = trimmed.startsWith('>') || trimmed.startsWith('*');
+        const namePart = isCurrent ? parts[0].replace(/^[>*]\s*/, '') : parts[0];
+        const idPart = parts[parts.length - 1];
+
+        if (namePart && idPart && idPart.startsWith('team_')) {
+          fetchedTeams.push({
+            id: idPart.trim(),
+            name: namePart.trim(),
+            is_current: isCurrent,
+          });
+        }
+      }
+
       setTeams(fetchedTeams);
       const currentTeam = fetchedTeams.find((t) => t.is_current);
       setSelectedScope(currentTeam ? currentTeam.id : undefined);
