@@ -179,8 +179,6 @@ const VERCEL_CSS = `
   background: #000;
   color: #fff;
   cursor: wait;
-  height: 32px;
-  box-sizing: border-box;
 }
 
 .vercel-button.vercel-deploying .deploying-text {
@@ -440,16 +438,11 @@ function VercelToolbar() {
             return;
           }
 
-          // Get project details and URLs via vercel inspect or alias ls
-          // Use vercel project ls to find the project name
-          const inspectArgs = ['inspect', '--json'];
-          const inspectResult = await shell.exec('vercel', inspectArgs).catch(() => null);
-
           let projectName: string | null = null;
           let productionUrl: string | null = null;
           let vercelOrg: string | null = null;
 
-          // Try to get project info from vercel ls
+          // Try to get project info + org slug from vercel ls
           const lsArgs = ['ls', '--json', '-n', '1'];
           const lsResult = await shell.exec('vercel', lsArgs).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
@@ -461,6 +454,13 @@ function VercelToolbar() {
                 projectName = dep.name || null;
                 if (dep.url) productionUrl = dep.url;
                 if (dep.alias && dep.alias.length > 0) productionUrl = dep.alias[0];
+                // Extract org slug from inspectorUrl: https://vercel.com/<org>/<project>/...
+                if (dep.inspectorUrl) {
+                  const match = String(dep.inspectorUrl).match(
+                    /vercel\.com\/([^/]+)\/[^/]+/
+                  );
+                  if (match) vercelOrg = match[1];
+                }
               }
             } catch {
               // ignore parse errors
@@ -470,33 +470,6 @@ function VercelToolbar() {
           // If we still don't have a project name, try reading it from project.json name field
           if (!projectName && projectJson.projectName) {
             projectName = projectJson.projectName;
-          }
-
-          // Try to get the org slug for dashboard URL
-          if (orgId) {
-            const teamsResult = await shell.exec('vercel', ['team', 'ls', '--no-color']).catch(() => null);
-            if (teamsResult && teamsResult.exit_code === 0) {
-              const lines = teamsResult.stdout.split('\n');
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith('─') || trimmed.startsWith('ID')) continue;
-                // Team table: columns separated by whitespace
-                const parts = trimmed.split(/\s{2,}/);
-                if (parts.length >= 2) {
-                  const slug = parts[0].replace(/\s+$/, '').replace(/^\s+/, '');
-                  // Check if this is the matching team by comparing IDs
-                  const id = parts.length >= 3 ? parts[parts.length - 1].trim() : '';
-                  if (id === orgId || slug) {
-                    vercelOrg = slug;
-                    break;
-                  }
-                }
-              }
-            }
-            // If no team found, it might be a personal account - use whoami
-            if (!vercelOrg) {
-              vercelOrg = whoamiResult.stdout.trim();
-            }
           }
 
           setProjectStatus({
@@ -682,13 +655,32 @@ function VercelToolbar() {
       }
       const parsed = JSON.parse(result.stdout);
       const orgId = scope || 'personal';
-      const projects: VercelProject[] = (parsed.projects || [])
-        .filter((p: { name?: string; id?: string }) => p.name && p.id)
-        .map((p: { name: string; id: string }) => ({
-          id: p.id,
-          name: p.name,
-          orgId,
-        }));
+
+      // Handle different response shapes from vercel CLI
+      let rawProjects: Record<string, unknown>[];
+      if (Array.isArray(parsed)) {
+        rawProjects = parsed;
+      } else if (Array.isArray(parsed.projects)) {
+        rawProjects = parsed.projects;
+      } else {
+        rawProjects = [];
+      }
+
+      const projects: VercelProject[] = rawProjects
+        .filter((p) => p && typeof p === 'object')
+        .map((p: Record<string, unknown>) => {
+          const id = (p.id || p.uid || '') as string;
+          // Prefer name fields that aren't IDs; fall back to slug variants
+          const rawName = p.name as string | undefined;
+          const name =
+            (rawName && !rawName.startsWith('prj_') ? rawName : null) ||
+            (p.slug as string | undefined) ||
+            (p.projectName as string | undefined) ||
+            rawName ||
+            id;
+          return { id, name: name || '', orgId };
+        })
+        .filter((p) => p.id && p.name);
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
@@ -700,6 +692,7 @@ function VercelToolbar() {
   const handleDeploy = async () => {
     if (!deployName.trim()) return;
     setIsDeploying(true);
+    setShowDeployModal(false);
     setError(null);
     try {
       // Step 1: Link the project (fast, <30s)
@@ -712,23 +705,23 @@ function VercelToolbar() {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
 
-      setShowDeployModal(false);
-      toast('Connected to Vercel!', 'success');
-
       // Step 2: Attempt production deploy (may timeout at 30s)
-      try {
-        const deployArgs = ['--prod', '--yes'];
-        if (selectedScope) {
-          deployArgs.push('--scope', selectedScope);
-        }
-        await shell.exec('vercel', deployArgs);
-      } catch {
-        // Deploy may have timed out — project is still linked
-        toast('Deploy may still be running in the background', 'success');
+      const deployArgs = ['--prod', '--yes'];
+      if (selectedScope) {
+        deployArgs.push('--scope', selectedScope);
+      }
+      const deployResult = await shell.exec('vercel', deployArgs);
+      if (deployResult.exit_code === 0) {
+        toast('Deployed to Vercel!', 'success');
+      } else {
+        // Deploy failed or timed out — project is still linked
+        toast('Connected to Vercel! Deploy is still running.', 'success');
       }
 
       await checkStatus();
     } catch (e) {
+      // If link failed, show error in modal
+      setShowDeployModal(true);
       setError(String(e));
     } finally {
       setIsDeploying(false);

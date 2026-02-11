@@ -171,8 +171,6 @@ const VERCEL_CSS = `
   background: #000;
   color: #fff;
   cursor: wait;
-  height: 32px;
-  box-sizing: border-box;
 }
 
 .vercel-button.vercel-deploying .deploying-text {
@@ -366,8 +364,6 @@ function VercelToolbar() {
             });
             return;
           }
-          const inspectArgs = ["inspect", "--json"];
-          const inspectResult = await shell.exec("vercel", inspectArgs).catch(() => null);
           let projectName = null;
           let productionUrl = null;
           let vercelOrg = null;
@@ -382,34 +378,18 @@ function VercelToolbar() {
                 projectName = dep.name || null;
                 if (dep.url) productionUrl = dep.url;
                 if (dep.alias && dep.alias.length > 0) productionUrl = dep.alias[0];
+                if (dep.inspectorUrl) {
+                  const match = String(dep.inspectorUrl).match(
+                    /vercel\.com\/([^/]+)\/[^/]+/
+                  );
+                  if (match) vercelOrg = match[1];
+                }
               }
             } catch {
             }
           }
           if (!projectName && projectJson.projectName) {
             projectName = projectJson.projectName;
-          }
-          if (orgId) {
-            const teamsResult = await shell.exec("vercel", ["team", "ls", "--no-color"]).catch(() => null);
-            if (teamsResult && teamsResult.exit_code === 0) {
-              const lines = teamsResult.stdout.split("\n");
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith("─") || trimmed.startsWith("ID")) continue;
-                const parts = trimmed.split(/\s{2,}/);
-                if (parts.length >= 2) {
-                  const slug = parts[0].replace(/\s+$/, "").replace(/^\s+/, "");
-                  const id = parts.length >= 3 ? parts[parts.length - 1].trim() : "";
-                  if (id === orgId || slug) {
-                    vercelOrg = slug;
-                    break;
-                  }
-                }
-              }
-            }
-            if (!vercelOrg) {
-              vercelOrg = whoamiResult.stdout.trim();
-            }
           }
           setProjectStatus({
             status: "connected",
@@ -567,11 +547,20 @@ function VercelToolbar() {
       }
       const parsed = JSON.parse(result.stdout);
       const orgId = scope || "personal";
-      const projects = (parsed.projects || []).filter((p) => p.name && p.id).map((p) => ({
-        id: p.id,
-        name: p.name,
-        orgId
-      }));
+      let rawProjects;
+      if (Array.isArray(parsed)) {
+        rawProjects = parsed;
+      } else if (Array.isArray(parsed.projects)) {
+        rawProjects = parsed.projects;
+      } else {
+        rawProjects = [];
+      }
+      const projects = rawProjects.filter((p) => p && typeof p === "object").map((p) => {
+        const id = p.id || p.uid || "";
+        const rawName = p.name;
+        const name2 = (rawName && !rawName.startsWith("prj_") ? rawName : null) || p.slug || p.projectName || rawName || id;
+        return { id, name: name2 || "", orgId };
+      }).filter((p) => p.id && p.name);
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
@@ -582,6 +571,7 @@ function VercelToolbar() {
   const handleDeploy = async () => {
     if (!deployName.trim()) return;
     setIsDeploying(true);
+    setShowDeployModal(false);
     setError(null);
     try {
       const linkArgs = ["link", "--yes", "--project", deployName.trim()];
@@ -592,19 +582,19 @@ function VercelToolbar() {
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || "Failed to link project");
       }
-      setShowDeployModal(false);
-      toast("Connected to Vercel!", "success");
-      try {
-        const deployArgs = ["--prod", "--yes"];
-        if (selectedScope) {
-          deployArgs.push("--scope", selectedScope);
-        }
-        await shell.exec("vercel", deployArgs);
-      } catch {
-        toast("Deploy may still be running in the background", "success");
+      const deployArgs = ["--prod", "--yes"];
+      if (selectedScope) {
+        deployArgs.push("--scope", selectedScope);
+      }
+      const deployResult = await shell.exec("vercel", deployArgs);
+      if (deployResult.exit_code === 0) {
+        toast("Deployed to Vercel!", "success");
+      } else {
+        toast("Connected to Vercel! Deploy is still running.", "success");
       }
       await checkStatus();
     } catch (e) {
+      setShowDeployModal(true);
       setError(String(e));
     } finally {
       setIsDeploying(false);
