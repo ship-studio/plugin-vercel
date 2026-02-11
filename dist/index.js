@@ -574,20 +574,17 @@ function VercelToolbar() {
       }
       const orgId = scope || "personal";
       const projects = [];
-      const lines = result.stdout.split("\n");
-      let headerPassed = false;
+      const clean = result.stdout.replace(/\x1b\[[0-9;]*m/g, "");
+      const lines = clean.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        if (trimmed.includes("───")) {
-          headerPassed = true;
-          continue;
-        }
-        if (!headerPassed) continue;
-        const parts = trimmed.split(/\s{2,}/);
-        const name2 = (_a = parts[0]) == null ? void 0 : _a.trim();
-        if (name2 && !name2.startsWith(">")) {
-          projects.push({ id: name2, name: name2, orgId });
+        if (trimmed.startsWith(">")) continue;
+        if (trimmed.includes("───")) continue;
+        const firstCol = (_a = trimmed.split(/\s{2,}/)[0]) == null ? void 0 : _a.trim();
+        if (!firstCol) continue;
+        if (/^[a-z0-9][a-z0-9_.-]*$/.test(firstCol)) {
+          projects.push({ id: firstCol, name: firstCol, orgId });
         }
       }
       setExistingProjects(projects);

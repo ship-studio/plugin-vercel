@@ -693,23 +693,22 @@ function VercelToolbar() {
 
       const orgId = scope || 'personal';
       const projects: VercelProject[] = [];
-      const lines = result.stdout.split('\n');
-      let headerPassed = false;
+      // Strip ANSI codes
+      const clean = result.stdout.replace(/\x1b\[[0-9;]*m/g, '');
+      const lines = clean.split('\n');
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        // Skip separator line (dashes), marks end of header
-        if (trimmed.includes('───')) {
-          headerPassed = true;
-          continue;
-        }
-        if (!headerPassed) continue;
-        // Parse table row — first column is project name
-        const parts = trimmed.split(/\s{2,}/);
-        const name = parts[0]?.trim();
-        if (name && !name.startsWith('>')) {
-          projects.push({ id: name, name, orgId });
+        // Skip summary lines, separators, and headers
+        if (trimmed.startsWith('>')) continue;
+        if (trimmed.includes('───')) continue;
+        const firstCol = trimmed.split(/\s{2,}/)[0]?.trim();
+        if (!firstCol) continue;
+        // Vercel project names are lowercase alphanumeric + hyphens/underscores
+        // This naturally skips header words like "Project", "Name", "Latest"
+        if (/^[a-z0-9][a-z0-9_.-]*$/.test(firstCol)) {
+          projects.push({ id: firstCol, name: firstCol, orgId });
         }
       }
 
