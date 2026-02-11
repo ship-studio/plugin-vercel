@@ -392,6 +392,19 @@ function VercelToolbar() {
     };
   }, [project?.path]);
 
+  // Poll for git remote when none is detected
+  useEffect(() => {
+    if (hasGitRemote) return;
+    const interval = setInterval(async () => {
+      const result = await shell.exec('git', ['remote', '-v']).catch(() => null);
+      if (result && result.exit_code === 0 && result.stdout.trim().length > 0) {
+        setHasGitRemote(true);
+        void checkStatus();
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [hasGitRemote]);
+
   const checkStatus = async () => {
     try {
       // Check if git remote is configured

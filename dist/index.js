@@ -328,6 +328,17 @@ function VercelToolbar() {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, [project == null ? void 0 : project.path]);
+  useEffect(() => {
+    if (hasGitRemote) return;
+    const interval = setInterval(async () => {
+      const result = await shell.exec("git", ["remote", "-v"]).catch(() => null);
+      if (result && result.exit_code === 0 && result.stdout.trim().length > 0) {
+        setHasGitRemote(true);
+        void checkStatus();
+      }
+    }, 3e3);
+    return () => clearInterval(interval);
+  }, [hasGitRemote]);
   const checkStatus = async () => {
     try {
       const remoteResult = await shell.exec("git", ["remote", "-v"]);
