@@ -438,38 +438,53 @@ function VercelToolbar() {
             return;
           }
 
-          let projectName: string | null = null;
+          let projectName: string | null = projectJson.projectName || null;
           let productionUrl: string | null = null;
           let vercelOrg: string | null = null;
 
-          // Try to get project info + org slug from vercel ls
-          const lsArgs = ['ls', '--json', '-n', '1'];
-          const lsResult = await shell.exec('vercel', lsArgs).catch(() => null);
-          if (lsResult && lsResult.exit_code === 0) {
+          // Get deployment info + org slug from vercel ls (text output)
+          // Text header contains "under <scope-slug>" which gives us the dashboard org
+          const lsTextResult = await shell.exec('vercel', ['ls', '--no-color']).catch(() => null);
+          if (lsTextResult && lsTextResult.exit_code === 0) {
+            const lines = lsTextResult.stdout.split('\n');
+            for (const line of lines) {
+              // Header line: "> Deployments for <project> under <scope> [time]"
+              // or "> N deployments found under <scope> [time]"
+              const scopeMatch = line.match(/under\s+(\S+)/);
+              if (scopeMatch) {
+                vercelOrg = scopeMatch[1];
+              }
+              // Also try to get project name from header
+              const projMatch = line.match(/Deployments?\s+for\s+(\S+)/);
+              if (projMatch && !projectName) {
+                projectName = projMatch[1];
+              }
+            }
+          }
+
+          // Try vercel ls --json for production URL
+          const lsJsonResult = await shell.exec('vercel', ['ls', '--json']).catch(() => null);
+          if (lsJsonResult && lsJsonResult.exit_code === 0) {
             try {
-              const lsData = JSON.parse(lsResult.stdout);
-              const deployments = lsData.deployments || lsData;
-              if (Array.isArray(deployments) && deployments.length > 0) {
+              const lsData = JSON.parse(lsJsonResult.stdout);
+              const deployments = lsData.deployments || (Array.isArray(lsData) ? lsData : []);
+              if (deployments.length > 0) {
                 const dep = deployments[0];
-                projectName = dep.name || null;
-                if (dep.url) productionUrl = dep.url;
-                if (dep.alias && dep.alias.length > 0) productionUrl = dep.alias[0];
-                // Extract org slug from inspectorUrl: https://vercel.com/<org>/<project>/...
-                if (dep.inspectorUrl) {
-                  const match = String(dep.inspectorUrl).match(
-                    /vercel\.com\/([^/]+)\/[^/]+/
-                  );
+                if (!projectName) projectName = dep.name || null;
+                if (dep.alias && dep.alias.length > 0) {
+                  productionUrl = dep.alias[0];
+                } else if (dep.url) {
+                  productionUrl = dep.url;
+                }
+                // Fallback: extract org from inspectorUrl if text parsing missed it
+                if (!vercelOrg && dep.inspectorUrl) {
+                  const match = String(dep.inspectorUrl).match(/vercel\.com\/([^/]+)\//);
                   if (match) vercelOrg = match[1];
                 }
               }
             } catch {
               // ignore parse errors
             }
-          }
-
-          // If we still don't have a project name, try reading it from project.json name field
-          if (!projectName && projectJson.projectName) {
-            projectName = projectJson.projectName;
           }
 
           setProjectStatus({
@@ -644,7 +659,8 @@ function VercelToolbar() {
     setIsLoadingProjects(true);
     setSelectedProjectId('');
     try {
-      const args = ['project', 'ls', '--json'];
+      // Use text output — --json returns IDs instead of names
+      const args = ['project', 'ls', '--no-color'];
       if (scope) {
         args.push('--scope', scope);
       }
@@ -653,34 +669,29 @@ function VercelToolbar() {
         setExistingProjects([]);
         return;
       }
-      const parsed = JSON.parse(result.stdout);
-      const orgId = scope || 'personal';
 
-      // Handle different response shapes from vercel CLI
-      let rawProjects: Record<string, unknown>[];
-      if (Array.isArray(parsed)) {
-        rawProjects = parsed;
-      } else if (Array.isArray(parsed.projects)) {
-        rawProjects = parsed.projects;
-      } else {
-        rawProjects = [];
+      const orgId = scope || 'personal';
+      const projects: VercelProject[] = [];
+      const lines = result.stdout.split('\n');
+      let headerPassed = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        // Skip separator line (dashes), marks end of header
+        if (trimmed.includes('───')) {
+          headerPassed = true;
+          continue;
+        }
+        if (!headerPassed) continue;
+        // Parse table row — first column is project name
+        const parts = trimmed.split(/\s{2,}/);
+        const name = parts[0]?.trim();
+        if (name && !name.startsWith('>')) {
+          projects.push({ id: name, name, orgId });
+        }
       }
 
-      const projects: VercelProject[] = rawProjects
-        .filter((p) => p && typeof p === 'object')
-        .map((p: Record<string, unknown>) => {
-          const id = (p.id || p.uid || '') as string;
-          // Prefer name fields that aren't IDs; fall back to slug variants
-          const rawName = p.name as string | undefined;
-          const name =
-            (rawName && !rawName.startsWith('prj_') ? rawName : null) ||
-            (p.slug as string | undefined) ||
-            (p.projectName as string | undefined) ||
-            rawName ||
-            id;
-          return { id, name: name || '', orgId };
-        })
-        .filter((p) => p.id && p.name);
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
@@ -734,19 +745,14 @@ function VercelToolbar() {
     setIsLinking(true);
     setError(null);
     try {
-      // Create .vercel directory
-      await shell.exec('mkdir', ['-p', '.vercel']);
-
-      // Write project.json
-      const projectJsonContent = JSON.stringify(
-        { projectId: proj.id, orgId: proj.orgId, projectName: proj.name },
-        null,
-        2
-      );
-      await shell.exec('node', [
-        '-e',
-        `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(projectJsonContent)})`,
-      ]);
+      const linkArgs = ['link', '--yes', '--project', proj.name];
+      if (selectedScope) {
+        linkArgs.push('--scope', selectedScope);
+      }
+      const result = await shell.exec('vercel', linkArgs);
+      if (result.exit_code !== 0) {
+        throw new Error(result.stderr || 'Failed to link project');
+      }
 
       setShowDeployModal(false);
       setOptimisticLinked(true);
