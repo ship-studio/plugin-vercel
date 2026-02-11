@@ -381,18 +381,17 @@ function VercelToolbar() {
           let projectName = projectJson.projectName || null;
           let productionUrl = null;
           let vercelOrg = projectJson.orgSlug || null;
-          const lsResult = await shell.exec("vercel", ["ls", "--no-color"]).catch(() => null);
+          const lsResult = await shell.exec("sh", ["-c", "vercel ls --no-color 2>&1"]).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
-            for (const line of lsResult.stdout.split("\n")) {
-              const headerMatch = line.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
-              if (headerMatch) {
-                vercelOrg = headerMatch[1];
-                if (!projectName) projectName = headerMatch[2];
-              }
-              if (!productionUrl) {
-                const urlMatch = line.match(/(https:\/\/\S+\.vercel\.app)/);
-                if (urlMatch) productionUrl = urlMatch[1].replace(/^https:\/\//, "");
-              }
+            const lsOutput = lsResult.stdout;
+            const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
+            if (headerMatch) {
+              vercelOrg = headerMatch[1];
+              if (!projectName) projectName = headerMatch[2];
+            }
+            const urlMatch = lsOutput.match(/(https:\/\/\S+\.vercel\.app)/);
+            if (urlMatch) {
+              productionUrl = urlMatch[1].replace(/^https:\/\//, "");
             }
           }
           setProjectStatus({
@@ -538,39 +537,53 @@ function VercelToolbar() {
     return /* @__PURE__ */ jsx("button", { className: "vercel-button vercel-linked", disabled: true, title: "Connected to Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
   }
   const loadExistingProjects = async (scope) => {
+    var _a;
     setIsLoadingProjects(true);
     setSelectedProjectId("");
     try {
-      const args = ["project", "ls", "--json"];
-      if (scope) {
-        args.push("--scope", scope);
-      }
-      const result = await shell.exec("vercel", args);
-      if (result.exit_code !== 0) {
-        setExistingProjects([]);
-        return;
-      }
-      const jsonStart = result.stdout.indexOf("{");
-      if (jsonStart === -1) {
-        setExistingProjects([]);
-        return;
-      }
-      const parsed = JSON.parse(result.stdout.slice(jsonStart));
+      const allProjects = [];
       const orgId = scope || "personal";
-      const projects = (parsed.projects || []).filter((p) => p.name && p.id).map((p) => ({
-        id: p.id,
-        name: p.name,
-        orgId
-      }));
-      setExistingProjects(projects);
+      let nextCursor;
+      do {
+        let cmd = "vercel project ls --no-color";
+        if (scope) cmd += ` --scope ${scope}`;
+        if (nextCursor) cmd += ` --next ${nextCursor}`;
+        cmd += " 2>&1";
+        const result = await shell.exec("sh", ["-c", cmd]);
+        if (result.exit_code !== 0) break;
+        const lines = result.stdout.split("\n");
+        let foundHeader = false;
+        nextCursor = void 0;
+        for (const line of lines) {
+          const nextMatch = line.match(/--next\s+(\d+)/);
+          if (nextMatch) {
+            nextCursor = nextMatch[1];
+            continue;
+          }
+          if (line.includes("Project Name")) {
+            foundHeader = true;
+            continue;
+          }
+          if (!foundHeader) continue;
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(">")) continue;
+          const parts = trimmed.split(/\s{2,}/);
+          const name2 = (_a = parts[0]) == null ? void 0 : _a.trim();
+          if (name2) {
+            allProjects.push({ id: name2, name: name2, orgId });
+          }
+        }
+      } while (nextCursor);
+      setExistingProjects(allProjects);
     } catch {
       setExistingProjects([]);
     } finally {
       setIsLoadingProjects(false);
     }
   };
-  const saveLinkMetadata = async (linkOutput) => {
-    const match = linkOutput.match(/Linked to\s+(\S+)\/(\S+)/);
+  const saveLinkMetadata = async (result) => {
+    const combined = (result.stdout + "\n" + result.stderr).replace(/\x1b\[[0-9;]*m/g, "");
+    const match = combined.match(/Linked to\s+(\S+)\/(\S+)/);
     if (!match) return;
     try {
       const pjResult = await shell.exec("cat", [".vercel/project.json"]);
@@ -600,7 +613,7 @@ function VercelToolbar() {
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || "Failed to link project");
       }
-      await saveLinkMetadata(linkResult.stdout);
+      await saveLinkMetadata(linkResult);
       const deployArgs = ["--prod", "--yes"];
       if (selectedScope) {
         deployArgs.push("--scope", selectedScope);
@@ -633,7 +646,7 @@ function VercelToolbar() {
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || "Failed to link project");
       }
-      await saveLinkMetadata(result.stdout);
+      await saveLinkMetadata(result);
       setShowDeployModal(false);
       setOptimisticLinked(true);
       toast("Linked to Vercel project!", "success");
@@ -653,32 +666,30 @@ function VercelToolbar() {
     setSelectedProjectId("");
     setIsLoadingTeams(true);
     try {
-      const result = await shell.exec("vercel", ["team", "ls", "--no-color"]);
+      const result = await shell.exec("sh", ["-c", "vercel team ls --no-color 2>&1"]);
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(void 0);
         return;
       }
       const fetchedTeams = [];
-      const lines = result.stdout.split("\n");
-      let headerPassed = false;
+      const output = result.stdout;
+      const lines = output.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        if (trimmed.startsWith("─") || trimmed.includes("───")) {
-          headerPassed = true;
-          continue;
-        }
-        if (!headerPassed) continue;
-        const parts = trimmed.split(/\s{2,}/);
+        if (trimmed.startsWith("Vercel") || trimmed.startsWith("Fetching") || trimmed.startsWith(">")) continue;
+        if (trimmed.includes("───") || trimmed.startsWith("id")) continue;
+        const isCurrent = trimmed.startsWith("✔") || trimmed.startsWith("*");
+        const cleaned = trimmed.replace(/^[✔*]\s*/, "");
+        const parts = cleaned.split(/\s{2,}/);
         if (parts.length < 2) continue;
-        const isCurrent = trimmed.startsWith(">") || trimmed.startsWith("*");
-        const namePart = isCurrent ? parts[0].replace(/^[>*]\s*/, "") : parts[0];
-        const idPart = parts[parts.length - 1];
-        if (namePart && idPart && idPart.startsWith("team_")) {
+        const slug = parts[0].trim();
+        const name2 = parts[1].trim();
+        if (slug && name2 && !slug.startsWith("id")) {
           fetchedTeams.push({
-            id: idPart.trim(),
-            name: namePart.trim(),
+            id: slug,
+            name: name2,
             is_current: isCurrent
           });
         }

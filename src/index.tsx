@@ -460,21 +460,19 @@ function VercelToolbar() {
           let productionUrl: string | null = null;
           let vercelOrg: string | null = projectJson.orgSlug || null;
 
-          // Get org slug, project name, and production URL from vercel ls text output
-          // Header: "> Deployments for <org>/<project> [time]"
-          // Table row: "25m  https://<url>.vercel.app  ● Ready  Production ..."
-          const lsResult = await shell.exec('vercel', ['ls', '--no-color']).catch(() => null);
+          // Get org slug, project name, and production URL from vercel ls
+          // Output may be in stdout, stderr, or both depending on shell proxy
+          const lsResult = await shell.exec('sh', ['-c', 'vercel ls --no-color 2>&1']).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
-            for (const line of lsResult.stdout.split('\n')) {
-              const headerMatch = line.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
-              if (headerMatch) {
-                vercelOrg = headerMatch[1];
-                if (!projectName) projectName = headerMatch[2];
-              }
-              if (!productionUrl) {
-                const urlMatch = line.match(/(https:\/\/\S+\.vercel\.app)/);
-                if (urlMatch) productionUrl = urlMatch[1].replace(/^https:\/\//, '');
-              }
+            const lsOutput = lsResult.stdout;
+            const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
+            if (headerMatch) {
+              vercelOrg = headerMatch[1];
+              if (!projectName) projectName = headerMatch[2];
+            }
+            const urlMatch = lsOutput.match(/(https:\/\/\S+\.vercel\.app)/);
+            if (urlMatch) {
+              productionUrl = urlMatch[1].replace(/^https:\/\//, '');
             }
           }
 
@@ -653,32 +651,51 @@ function VercelToolbar() {
     setIsLoadingProjects(true);
     setSelectedProjectId('');
     try {
-      const args = ['project', 'ls', '--json'];
-      if (scope) {
-        args.push('--scope', scope);
-      }
-      const result = await shell.exec('vercel', args);
-      if (result.exit_code !== 0) {
-        setExistingProjects([]);
-        return;
-      }
-
-      // Strip CLI prefix lines (e.g. "Vercel CLI 50.11.0\nFetching...")
-      const jsonStart = result.stdout.indexOf('{');
-      if (jsonStart === -1) {
-        setExistingProjects([]);
-        return;
-      }
-      const parsed = JSON.parse(result.stdout.slice(jsonStart));
+      const allProjects: VercelProject[] = [];
       const orgId = scope || 'personal';
-      const projects: VercelProject[] = (parsed.projects || [])
-        .filter((p: { name?: string; id?: string }) => p.name && p.id)
-        .map((p: { name: string; id: string }) => ({
-          id: p.id,
-          name: p.name,
-          orgId,
-        }));
-      setExistingProjects(projects);
+      let nextCursor: string | undefined;
+
+      do {
+        let cmd = 'vercel project ls --no-color';
+        if (scope) cmd += ` --scope ${scope}`;
+        if (nextCursor) cmd += ` --next ${nextCursor}`;
+        cmd += ' 2>&1';
+
+        const result = await shell.exec('sh', ['-c', cmd]);
+        if (result.exit_code !== 0) break;
+
+        const lines = result.stdout.split('\n');
+        let foundHeader = false;
+        nextCursor = undefined;
+
+        for (const line of lines) {
+          // Extract pagination cursor from "vercel project ls --next 123456" hint
+          const nextMatch = line.match(/--next\s+(\d+)/);
+          if (nextMatch) {
+            nextCursor = nextMatch[1];
+            continue;
+          }
+
+          // Detect the header row to know when data lines start
+          if (line.includes('Project Name')) {
+            foundHeader = true;
+            continue;
+          }
+          if (!foundHeader) continue;
+
+          // Parse data lines: columns separated by 2+ spaces
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('>')) continue;
+
+          const parts = trimmed.split(/\s{2,}/);
+          const name = parts[0]?.trim();
+          if (name) {
+            allProjects.push({ id: name, name, orgId });
+          }
+        }
+      } while (nextCursor);
+
+      setExistingProjects(allProjects);
     } catch {
       setExistingProjects([]);
     } finally {
@@ -687,8 +704,9 @@ function VercelToolbar() {
   };
 
   // Save org slug + project name from "Linked to <org>/<project>" output
-  const saveLinkMetadata = async (linkOutput: string) => {
-    const match = linkOutput.match(/Linked to\s+(\S+)\/(\S+)/);
+  const saveLinkMetadata = async (result: { stdout: string; stderr: string }) => {
+    const combined = (result.stdout + '\n' + result.stderr).replace(/\x1b\[[0-9;]*m/g, '');
+    const match = combined.match(/Linked to\s+(\S+)\/(\S+)/);
     if (!match) return;
     try {
       const pjResult = await shell.exec('cat', ['.vercel/project.json']);
@@ -722,7 +740,7 @@ function VercelToolbar() {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
 
-      await saveLinkMetadata(linkResult.stdout);
+      await saveLinkMetadata(linkResult);
 
       // Step 2: Attempt production deploy (may timeout at 30s)
       const deployArgs = ['--prod', '--yes'];
@@ -762,7 +780,7 @@ function VercelToolbar() {
         throw new Error(result.stderr || 'Failed to link project');
       }
 
-      await saveLinkMetadata(result.stdout);
+      await saveLinkMetadata(result);
 
       setShowDeployModal(false);
       setOptimisticLinked(true);
@@ -785,8 +803,12 @@ function VercelToolbar() {
     setIsLoadingTeams(true);
 
     try {
-      // Parse teams from `vercel team ls --no-color`
-      const result = await shell.exec('vercel', ['team', 'ls', '--no-color']);
+      // Parse teams from `vercel team ls`
+      // Text output goes to stderr; format:
+      //   id                           Team name
+      // ✔ julianmemberstacks-projects  julianmemberstack's projects
+      //   memberstack-team             Memberstack Team
+      const result = await shell.exec('sh', ['-c', 'vercel team ls --no-color 2>&1']);
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(undefined);
@@ -794,33 +816,31 @@ function VercelToolbar() {
       }
 
       const fetchedTeams: VercelTeam[] = [];
-      const lines = result.stdout.split('\n');
-      let headerPassed = false;
+      const output = result.stdout;
+      const lines = output.split('\n');
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        // Skip non-data lines
+        if (trimmed.startsWith('Vercel') || trimmed.startsWith('Fetching') || trimmed.startsWith('>')) continue;
+        if (trimmed.includes('───') || trimmed.startsWith('id')) continue;
 
-        // Skip until we pass the separator line (dashes)
-        if (trimmed.startsWith('─') || trimmed.includes('───')) {
-          headerPassed = true;
-          continue;
-        }
-        if (!headerPassed) continue;
+        // Detect current team marker (✔ at start)
+        const isCurrent = trimmed.startsWith('✔') || trimmed.startsWith('*');
+        const cleaned = trimmed.replace(/^[✔*]\s*/, '');
 
-        // Parse table row - columns separated by 2+ spaces
-        const parts = trimmed.split(/\s{2,}/);
+        // Columns: slug (id)  Team name — separated by 2+ spaces
+        const parts = cleaned.split(/\s{2,}/);
         if (parts.length < 2) continue;
 
-        // Detect current team marker (arrow or asterisk at start)
-        const isCurrent = trimmed.startsWith('>') || trimmed.startsWith('*');
-        const namePart = isCurrent ? parts[0].replace(/^[>*]\s*/, '') : parts[0];
-        const idPart = parts[parts.length - 1];
+        const slug = parts[0].trim();
+        const name = parts[1].trim();
 
-        if (namePart && idPart && idPart.startsWith('team_')) {
+        if (slug && name && !slug.startsWith('id')) {
           fetchedTeams.push({
-            id: idPart.trim(),
-            name: namePart.trim(),
+            id: slug,
+            name,
             is_current: isCurrent,
           });
         }
