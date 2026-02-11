@@ -380,40 +380,19 @@ function VercelToolbar() {
           }
           let projectName = projectJson.projectName || null;
           let productionUrl = null;
-          let vercelOrg = null;
-          const lsTextResult = await shell.exec("vercel", ["ls", "--no-color"]).catch(() => null);
-          if (lsTextResult && lsTextResult.exit_code === 0) {
-            const lines = lsTextResult.stdout.split("\n");
-            for (const line of lines) {
-              const scopeMatch = line.match(/under\s+(\S+)/);
-              if (scopeMatch) {
-                vercelOrg = scopeMatch[1];
+          let vercelOrg = projectJson.orgSlug || null;
+          const lsResult = await shell.exec("vercel", ["ls", "--no-color"]).catch(() => null);
+          if (lsResult && lsResult.exit_code === 0) {
+            for (const line of lsResult.stdout.split("\n")) {
+              const headerMatch = line.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
+              if (headerMatch) {
+                vercelOrg = headerMatch[1];
+                if (!projectName) projectName = headerMatch[2];
               }
-              const projMatch = line.match(/Deployments?\s+for\s+(\S+)/);
-              if (projMatch && !projectName) {
-                projectName = projMatch[1];
+              if (!productionUrl) {
+                const urlMatch = line.match(/(https:\/\/\S+\.vercel\.app)/);
+                if (urlMatch) productionUrl = urlMatch[1].replace(/^https:\/\//, "");
               }
-            }
-          }
-          const lsJsonResult = await shell.exec("vercel", ["ls", "--json"]).catch(() => null);
-          if (lsJsonResult && lsJsonResult.exit_code === 0) {
-            try {
-              const lsData = JSON.parse(lsJsonResult.stdout);
-              const deployments = lsData.deployments || (Array.isArray(lsData) ? lsData : []);
-              if (deployments.length > 0) {
-                const dep = deployments[0];
-                if (!projectName) projectName = dep.name || null;
-                if (dep.alias && dep.alias.length > 0) {
-                  productionUrl = dep.alias[0];
-                } else if (dep.url) {
-                  productionUrl = dep.url;
-                }
-                if (!vercelOrg && dep.inspectorUrl) {
-                  const match = String(dep.inspectorUrl).match(/vercel\.com\/([^/]+)\//);
-                  if (match) vercelOrg = match[1];
-                }
-              }
-            } catch {
             }
           }
           setProjectStatus({
@@ -559,11 +538,10 @@ function VercelToolbar() {
     return /* @__PURE__ */ jsx("button", { className: "vercel-button vercel-linked", disabled: true, title: "Connected to Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
   }
   const loadExistingProjects = async (scope) => {
-    var _a;
     setIsLoadingProjects(true);
     setSelectedProjectId("");
     try {
-      const args = ["project", "ls", "--no-color"];
+      const args = ["project", "ls", "--json"];
       if (scope) {
         args.push("--scope", scope);
       }
@@ -572,26 +550,40 @@ function VercelToolbar() {
         setExistingProjects([]);
         return;
       }
-      const orgId = scope || "personal";
-      const projects = [];
-      const clean = result.stdout.replace(/\x1b\[[0-9;]*m/g, "");
-      const lines = clean.split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (trimmed.startsWith(">")) continue;
-        if (trimmed.includes("───")) continue;
-        const firstCol = (_a = trimmed.split(/\s{2,}/)[0]) == null ? void 0 : _a.trim();
-        if (!firstCol) continue;
-        if (/^[a-z0-9][a-z0-9_.-]*$/.test(firstCol)) {
-          projects.push({ id: firstCol, name: firstCol, orgId });
-        }
+      const jsonStart = result.stdout.indexOf("{");
+      if (jsonStart === -1) {
+        setExistingProjects([]);
+        return;
       }
+      const parsed = JSON.parse(result.stdout.slice(jsonStart));
+      const orgId = scope || "personal";
+      const projects = (parsed.projects || []).filter((p) => p.name && p.id).map((p) => ({
+        id: p.id,
+        name: p.name,
+        orgId
+      }));
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
     } finally {
       setIsLoadingProjects(false);
+    }
+  };
+  const saveLinkMetadata = async (linkOutput) => {
+    const match = linkOutput.match(/Linked to\s+(\S+)\/(\S+)/);
+    if (!match) return;
+    try {
+      const pjResult = await shell.exec("cat", [".vercel/project.json"]);
+      if (pjResult.exit_code !== 0) return;
+      const pj = JSON.parse(pjResult.stdout);
+      pj.orgSlug = match[1];
+      pj.projectName = match[2];
+      const content = JSON.stringify(pj, null, 2);
+      await shell.exec("node", [
+        "-e",
+        `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`
+      ]);
+    } catch {
     }
   };
   const handleDeploy = async () => {
@@ -608,6 +600,7 @@ function VercelToolbar() {
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || "Failed to link project");
       }
+      await saveLinkMetadata(linkResult.stdout);
       const deployArgs = ["--prod", "--yes"];
       if (selectedScope) {
         deployArgs.push("--scope", selectedScope);
@@ -640,6 +633,7 @@ function VercelToolbar() {
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || "Failed to link project");
       }
+      await saveLinkMetadata(result.stdout);
       setShowDeployModal(false);
       setOptimisticLinked(true);
       toast("Linked to Vercel project!", "success");

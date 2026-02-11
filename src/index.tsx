@@ -458,50 +458,23 @@ function VercelToolbar() {
 
           let projectName: string | null = projectJson.projectName || null;
           let productionUrl: string | null = null;
-          let vercelOrg: string | null = null;
+          let vercelOrg: string | null = projectJson.orgSlug || null;
 
-          // Get deployment info + org slug from vercel ls (text output)
-          // Text header contains "under <scope-slug>" which gives us the dashboard org
-          const lsTextResult = await shell.exec('vercel', ['ls', '--no-color']).catch(() => null);
-          if (lsTextResult && lsTextResult.exit_code === 0) {
-            const lines = lsTextResult.stdout.split('\n');
-            for (const line of lines) {
-              // Header line: "> Deployments for <project> under <scope> [time]"
-              // or "> N deployments found under <scope> [time]"
-              const scopeMatch = line.match(/under\s+(\S+)/);
-              if (scopeMatch) {
-                vercelOrg = scopeMatch[1];
+          // Get org slug, project name, and production URL from vercel ls text output
+          // Header: "> Deployments for <org>/<project> [time]"
+          // Table row: "25m  https://<url>.vercel.app  ● Ready  Production ..."
+          const lsResult = await shell.exec('vercel', ['ls', '--no-color']).catch(() => null);
+          if (lsResult && lsResult.exit_code === 0) {
+            for (const line of lsResult.stdout.split('\n')) {
+              const headerMatch = line.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
+              if (headerMatch) {
+                vercelOrg = headerMatch[1];
+                if (!projectName) projectName = headerMatch[2];
               }
-              // Also try to get project name from header
-              const projMatch = line.match(/Deployments?\s+for\s+(\S+)/);
-              if (projMatch && !projectName) {
-                projectName = projMatch[1];
+              if (!productionUrl) {
+                const urlMatch = line.match(/(https:\/\/\S+\.vercel\.app)/);
+                if (urlMatch) productionUrl = urlMatch[1].replace(/^https:\/\//, '');
               }
-            }
-          }
-
-          // Try vercel ls --json for production URL
-          const lsJsonResult = await shell.exec('vercel', ['ls', '--json']).catch(() => null);
-          if (lsJsonResult && lsJsonResult.exit_code === 0) {
-            try {
-              const lsData = JSON.parse(lsJsonResult.stdout);
-              const deployments = lsData.deployments || (Array.isArray(lsData) ? lsData : []);
-              if (deployments.length > 0) {
-                const dep = deployments[0];
-                if (!projectName) projectName = dep.name || null;
-                if (dep.alias && dep.alias.length > 0) {
-                  productionUrl = dep.alias[0];
-                } else if (dep.url) {
-                  productionUrl = dep.url;
-                }
-                // Fallback: extract org from inspectorUrl if text parsing missed it
-                if (!vercelOrg && dep.inspectorUrl) {
-                  const match = String(dep.inspectorUrl).match(/vercel\.com\/([^/]+)\//);
-                  if (match) vercelOrg = match[1];
-                }
-              }
-            } catch {
-              // ignore parse errors
             }
           }
 
@@ -680,8 +653,7 @@ function VercelToolbar() {
     setIsLoadingProjects(true);
     setSelectedProjectId('');
     try {
-      // Use text output — --json returns IDs instead of names
-      const args = ['project', 'ls', '--no-color'];
+      const args = ['project', 'ls', '--json'];
       if (scope) {
         args.push('--scope', scope);
       }
@@ -691,32 +663,46 @@ function VercelToolbar() {
         return;
       }
 
-      const orgId = scope || 'personal';
-      const projects: VercelProject[] = [];
-      // Strip ANSI codes
-      const clean = result.stdout.replace(/\x1b\[[0-9;]*m/g, '');
-      const lines = clean.split('\n');
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        // Skip summary lines, separators, and headers
-        if (trimmed.startsWith('>')) continue;
-        if (trimmed.includes('───')) continue;
-        const firstCol = trimmed.split(/\s{2,}/)[0]?.trim();
-        if (!firstCol) continue;
-        // Vercel project names are lowercase alphanumeric + hyphens/underscores
-        // This naturally skips header words like "Project", "Name", "Latest"
-        if (/^[a-z0-9][a-z0-9_.-]*$/.test(firstCol)) {
-          projects.push({ id: firstCol, name: firstCol, orgId });
-        }
+      // Strip CLI prefix lines (e.g. "Vercel CLI 50.11.0\nFetching...")
+      const jsonStart = result.stdout.indexOf('{');
+      if (jsonStart === -1) {
+        setExistingProjects([]);
+        return;
       }
-
+      const parsed = JSON.parse(result.stdout.slice(jsonStart));
+      const orgId = scope || 'personal';
+      const projects: VercelProject[] = (parsed.projects || [])
+        .filter((p: { name?: string; id?: string }) => p.name && p.id)
+        .map((p: { name: string; id: string }) => ({
+          id: p.id,
+          name: p.name,
+          orgId,
+        }));
       setExistingProjects(projects);
     } catch {
       setExistingProjects([]);
     } finally {
       setIsLoadingProjects(false);
+    }
+  };
+
+  // Save org slug + project name from "Linked to <org>/<project>" output
+  const saveLinkMetadata = async (linkOutput: string) => {
+    const match = linkOutput.match(/Linked to\s+(\S+)\/(\S+)/);
+    if (!match) return;
+    try {
+      const pjResult = await shell.exec('cat', ['.vercel/project.json']);
+      if (pjResult.exit_code !== 0) return;
+      const pj = JSON.parse(pjResult.stdout);
+      pj.orgSlug = match[1];
+      pj.projectName = match[2];
+      const content = JSON.stringify(pj, null, 2);
+      await shell.exec('node', [
+        '-e',
+        `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`,
+      ]);
+    } catch {
+      // non-critical — checkStatus will still work via vercel ls
     }
   };
 
@@ -735,6 +721,8 @@ function VercelToolbar() {
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
+
+      await saveLinkMetadata(linkResult.stdout);
 
       // Step 2: Attempt production deploy (may timeout at 30s)
       const deployArgs = ['--prod', '--yes'];
@@ -773,6 +761,8 @@ function VercelToolbar() {
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || 'Failed to link project');
       }
+
+      await saveLinkMetadata(result.stdout);
 
       setShowDeployModal(false);
       setOptimisticLinked(true);
