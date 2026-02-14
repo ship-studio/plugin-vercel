@@ -10,56 +10,15 @@ import { useState, useRef, useEffect } from 'react';
 
 const VERCEL_CSS = `
 /* Vercel Integration - Workspace Header */
-.vercel-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 10px;
-  min-height: 32px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  transition: all 0.15s;
-}
-
-.vercel-button svg {
-  flex-shrink: 0;
-}
-
-.vercel-button.vercel-install,
-.vercel-button.vercel-connect {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-install:hover,
-.vercel-button.vercel-connect:hover {
-  background: var(--border);
-  color: var(--text-primary);
-}
-
-.vercel-button.vercel-linked {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-linked:hover {
-  background: var(--border);
-  border-color: var(--text-muted);
-}
-
-.vercel-button.vercel-linked svg {
-  color: var(--text-muted);
-}
-
-.vercel-button.vercel-linked:hover svg {
-  color: var(--text-secondary);
-}
+/* Extends host .toolbar-icon-btn class for base button styling */
 
 .vercel-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.vercel-button svg {
+  flex-shrink: 0;
 }
 
 .vercel-error {
@@ -190,19 +149,7 @@ const VERCEL_CSS = `
   50% { opacity: 0.5; }
 }
 
-.vercel-button.vercel-setup {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-setup:hover {
-  background: var(--border);
-  color: var(--text-primary);
-}
-
 .vercel-button.vercel-checking {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
   cursor: wait;
 }
 
@@ -512,7 +459,7 @@ function VercelToolbar() {
   if (!cliStatus.installed) {
     return (
       <button
-        className="vercel-button vercel-install"
+        className="toolbar-icon-btn vercel-button vercel-install"
         onClick={async () => {
           setIsInstalling(true);
           try {
@@ -545,7 +492,7 @@ function VercelToolbar() {
   if (!cliStatus.authenticated) {
     return (
       <button
-        className="vercel-button vercel-connect"
+        className="toolbar-icon-btn vercel-button vercel-connect"
         title="Connect your Vercel account"
         onClick={() => toast('Run "vercel login" in the terminal to connect', 'success')}
       >
@@ -558,7 +505,7 @@ function VercelToolbar() {
   // ---- Deploying ----
   if (isDeploying) {
     return (
-      <button className="vercel-button vercel-deploying" disabled title="Deploying to Vercel...">
+      <button className="toolbar-icon-btn vercel-button vercel-deploying" disabled title="Deploying to Vercel...">
         <VercelIcon />
         <span className="deploying-text">Deploying...</span>
       </button>
@@ -587,7 +534,7 @@ function VercelToolbar() {
         onMouseLeave={() => setShowSiteDropdown(false)}
       >
         <button
-          className="vercel-button vercel-linked"
+          className="toolbar-icon-btn vercel-button vercel-linked"
           onClick={() => openUrl(dashboardUrl)}
           title="Open Vercel dashboard"
         >
@@ -631,7 +578,7 @@ function VercelToolbar() {
   // ---- Still checking status ----
   if (projectStatus === null) {
     return (
-      <button className="vercel-button vercel-checking" disabled title="Checking Vercel status...">
+      <button className="toolbar-icon-btn vercel-button vercel-checking" disabled title="Checking Vercel status...">
         <VercelIcon />
         <span className="checking-text">Connecting...</span>
       </button>
@@ -641,7 +588,7 @@ function VercelToolbar() {
   // ---- Optimistic linked state ----
   if (optimisticLinked) {
     return (
-      <button className="vercel-button vercel-linked" disabled title="Connected to Vercel">
+      <button className="toolbar-icon-btn vercel-button vercel-linked" disabled title="Connected to Vercel">
         <VercelIcon />
       </button>
     );
@@ -866,7 +813,7 @@ function VercelToolbar() {
   return (
     <>
       <button
-        className="vercel-button vercel-setup"
+        className="toolbar-icon-btn vercel-button vercel-setup"
         onClick={() => void handleOpenDeployModal()}
         title="Connect to Vercel for auto-deployments"
       >

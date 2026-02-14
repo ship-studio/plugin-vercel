@@ -2,56 +2,15 @@ import { jsxs, jsx, Fragment } from "data:text/javascript,const R=window.__SHIPS
 import { useState, useRef, useEffect } from "data:text/javascript,export default window.__SHIPSTUDIO_REACT__;export const useState=window.__SHIPSTUDIO_REACT__.useState;export const useEffect=window.__SHIPSTUDIO_REACT__.useEffect;export const useRef=window.__SHIPSTUDIO_REACT__.useRef;export const useCallback=window.__SHIPSTUDIO_REACT__.useCallback;export const useMemo=window.__SHIPSTUDIO_REACT__.useMemo;export const createElement=window.__SHIPSTUDIO_REACT__.createElement;";
 const VERCEL_CSS = `
 /* Vercel Integration - Workspace Header */
-.vercel-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 10px;
-  min-height: 32px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  transition: all 0.15s;
-}
-
-.vercel-button svg {
-  flex-shrink: 0;
-}
-
-.vercel-button.vercel-install,
-.vercel-button.vercel-connect {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-install:hover,
-.vercel-button.vercel-connect:hover {
-  background: var(--border);
-  color: var(--text-primary);
-}
-
-.vercel-button.vercel-linked {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-linked:hover {
-  background: var(--border);
-  border-color: var(--text-muted);
-}
-
-.vercel-button.vercel-linked svg {
-  color: var(--text-muted);
-}
-
-.vercel-button.vercel-linked:hover svg {
-  color: var(--text-secondary);
-}
+/* Extends host .toolbar-icon-btn class for base button styling */
 
 .vercel-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.vercel-button svg {
+  flex-shrink: 0;
 }
 
 .vercel-error {
@@ -182,19 +141,7 @@ const VERCEL_CSS = `
   50% { opacity: 0.5; }
 }
 
-.vercel-button.vercel-setup {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.vercel-button.vercel-setup:hover {
-  background: var(--border);
-  color: var(--text-primary);
-}
-
 .vercel-button.vercel-checking {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
   cursor: wait;
 }
 
@@ -422,7 +369,7 @@ function VercelToolbar() {
     return /* @__PURE__ */ jsxs(
       "button",
       {
-        className: "vercel-button vercel-install",
+        className: "toolbar-icon-btn vercel-button vercel-install",
         onClick: async () => {
           setIsInstalling(true);
           try {
@@ -454,7 +401,7 @@ function VercelToolbar() {
     return /* @__PURE__ */ jsxs(
       "button",
       {
-        className: "vercel-button vercel-connect",
+        className: "toolbar-icon-btn vercel-button vercel-connect",
         title: "Connect your Vercel account",
         onClick: () => toast('Run "vercel login" in the terminal to connect', "success"),
         children: [
@@ -465,7 +412,7 @@ function VercelToolbar() {
     );
   }
   if (isDeploying) {
-    return /* @__PURE__ */ jsxs("button", { className: "vercel-button vercel-deploying", disabled: true, title: "Deploying to Vercel...", children: [
+    return /* @__PURE__ */ jsxs("button", { className: "toolbar-icon-btn vercel-button vercel-deploying", disabled: true, title: "Deploying to Vercel...", children: [
       /* @__PURE__ */ jsx(VercelIcon, {}),
       /* @__PURE__ */ jsx("span", { className: "deploying-text", children: "Deploying..." })
     ] });
@@ -487,7 +434,7 @@ function VercelToolbar() {
           /* @__PURE__ */ jsx(
             "button",
             {
-              className: "vercel-button vercel-linked",
+              className: "toolbar-icon-btn vercel-button vercel-linked",
               onClick: () => openUrl(dashboardUrl),
               title: "Open Vercel dashboard",
               children: /* @__PURE__ */ jsx(VercelIcon, {})
@@ -528,13 +475,13 @@ function VercelToolbar() {
     );
   }
   if (projectStatus === null) {
-    return /* @__PURE__ */ jsxs("button", { className: "vercel-button vercel-checking", disabled: true, title: "Checking Vercel status...", children: [
+    return /* @__PURE__ */ jsxs("button", { className: "toolbar-icon-btn vercel-button vercel-checking", disabled: true, title: "Checking Vercel status...", children: [
       /* @__PURE__ */ jsx(VercelIcon, {}),
       /* @__PURE__ */ jsx("span", { className: "checking-text", children: "Connecting..." })
     ] });
   }
   if (optimisticLinked) {
-    return /* @__PURE__ */ jsx("button", { className: "vercel-button vercel-linked", disabled: true, title: "Connected to Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button vercel-linked", disabled: true, title: "Connected to Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
   }
   const loadExistingProjects = async (scope) => {
     var _a;
@@ -712,7 +659,7 @@ function VercelToolbar() {
     /* @__PURE__ */ jsxs(
       "button",
       {
-        className: "vercel-button vercel-setup",
+        className: "toolbar-icon-btn vercel-button vercel-setup",
         onClick: () => void handleOpenDeployModal(),
         title: "Connect to Vercel for auto-deployments",
         children: [
