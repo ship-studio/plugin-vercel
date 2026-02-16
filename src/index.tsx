@@ -299,6 +299,7 @@ interface PluginContext {
   actions: {
     showToast: (msg: string, type?: 'success' | 'error') => void;
     openUrl: (url: string) => void;
+    openTerminal: (command: string, args: string[], options?: { title?: string }) => Promise<number | null>;
   };
   shell: {
     exec: (
@@ -375,6 +376,7 @@ function VercelToolbar() {
   const [optimisticLinked, setOptimisticLinked] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Inject CSS on mount, remove on unmount
@@ -580,16 +582,69 @@ function VercelToolbar() {
     );
   }
 
+  // ---- Login handler — opens interactive terminal modal ----
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    try {
+      await ctx.actions.openTerminal('vercel', ['login'], { title: 'Vercel Account' });
+      // Terminal closed — re-check auth status regardless of exit code
+      // (user may have completed login even if the process was cancelled)
+      await checkStatus();
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // ---- Disconnect / switch account handlers (defined before early returns that use them) ----
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await shell.exec('rm', ['-rf', '.vercel']);
+      setProjectStatus({
+        status: 'not-linked',
+        project_name: null,
+        vercel_org: null,
+        production_url: null,
+        staging_url: null,
+        linked_account: null,
+        current_account: null,
+      });
+      setOptimisticLinked(false);
+      toast('Project disconnected from Vercel', 'success');
+    } catch {
+      toast('Failed to disconnect project', 'error');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const handleSwitchAccount = async () => {
+    setIsSwitchingAccount(true);
+    try {
+      await shell.exec('vercel', ['logout']).catch(() => {});
+      setCliStatus({ installed: true, authenticated: false });
+      setProjectStatus(null);
+      // Open the interactive terminal for login
+      void handleLogin();
+    } catch {
+      toast('Failed to sign out', 'error');
+    } finally {
+      setIsSwitchingAccount(false);
+    }
+  };
+
   // ---- Not authenticated ----
   if (!cliStatus.authenticated) {
     return (
       <button
         className="toolbar-icon-btn vercel-button vercel-connect"
         title="Connect your Vercel account"
-        onClick={() => toast('Run "vercel login" in the terminal to connect', 'success')}
+        onClick={() => void handleLogin()}
+        disabled={isLoggingIn}
       >
         <VercelIcon />
-        Connect Vercel
+        {isLoggingIn ? 'Connecting...' : 'Connect Vercel'}
       </button>
     );
   }
@@ -846,42 +901,6 @@ function VercelToolbar() {
       ]);
     } catch {
       // non-critical — checkStatus will still work via vercel ls
-    }
-  };
-
-  const handleDisconnect = async () => {
-    setIsDisconnecting(true);
-    try {
-      await shell.exec('rm', ['-rf', '.vercel']);
-      setProjectStatus({
-        status: 'not-linked',
-        project_name: null,
-        vercel_org: null,
-        production_url: null,
-        staging_url: null,
-        linked_account: null,
-        current_account: null,
-      });
-      setOptimisticLinked(false);
-      toast('Project disconnected from Vercel', 'success');
-    } catch {
-      toast('Failed to disconnect project', 'error');
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
-
-  const handleSwitchAccount = async () => {
-    setIsSwitchingAccount(true);
-    try {
-      await shell.exec('vercel', ['logout']).catch(() => {});
-      setCliStatus({ installed: true, authenticated: false });
-      setProjectStatus(null);
-      toast('Signed out — run "vercel login" to sign in with a different account', 'success');
-    } catch {
-      toast('Failed to sign out', 'error');
-    } finally {
-      setIsSwitchingAccount(false);
     }
   };
 

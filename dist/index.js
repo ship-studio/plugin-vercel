@@ -313,6 +313,7 @@ function VercelToolbar() {
   const [optimisticLinked, setOptimisticLinked] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const pollRef = useRef(null);
   useEffect(() => {
     const style = document.createElement("style");
@@ -484,16 +485,62 @@ function VercelToolbar() {
       }
     );
   }
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    try {
+      await ctx.actions.openTerminal("vercel", ["login"], { title: "Vercel Account" });
+      await checkStatus();
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await shell.exec("rm", ["-rf", ".vercel"]);
+      setProjectStatus({
+        status: "not-linked",
+        project_name: null,
+        vercel_org: null,
+        production_url: null,
+        staging_url: null,
+        linked_account: null,
+        current_account: null
+      });
+      setOptimisticLinked(false);
+      toast("Project disconnected from Vercel", "success");
+    } catch {
+      toast("Failed to disconnect project", "error");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+  const handleSwitchAccount = async () => {
+    setIsSwitchingAccount(true);
+    try {
+      await shell.exec("vercel", ["logout"]).catch(() => {
+      });
+      setCliStatus({ installed: true, authenticated: false });
+      setProjectStatus(null);
+      void handleLogin();
+    } catch {
+      toast("Failed to sign out", "error");
+    } finally {
+      setIsSwitchingAccount(false);
+    }
+  };
   if (!cliStatus.authenticated) {
     return /* @__PURE__ */ jsxs(
       "button",
       {
         className: "toolbar-icon-btn vercel-button vercel-connect",
         title: "Connect your Vercel account",
-        onClick: () => toast('Run "vercel login" in the terminal to connect', "success"),
+        onClick: () => void handleLogin(),
+        disabled: isLoggingIn,
         children: [
           /* @__PURE__ */ jsx(VercelIcon, {}),
-          "Connect Vercel"
+          isLoggingIn ? "Connecting..." : "Connect Vercel"
         ]
       }
     );
@@ -730,41 +777,6 @@ function VercelToolbar() {
         `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`
       ]);
     } catch {
-    }
-  };
-  const handleDisconnect = async () => {
-    setIsDisconnecting(true);
-    try {
-      await shell.exec("rm", ["-rf", ".vercel"]);
-      setProjectStatus({
-        status: "not-linked",
-        project_name: null,
-        vercel_org: null,
-        production_url: null,
-        staging_url: null,
-        linked_account: null,
-        current_account: null
-      });
-      setOptimisticLinked(false);
-      toast("Project disconnected from Vercel", "success");
-    } catch {
-      toast("Failed to disconnect project", "error");
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
-  const handleSwitchAccount = async () => {
-    setIsSwitchingAccount(true);
-    try {
-      await shell.exec("vercel", ["logout"]).catch(() => {
-      });
-      setCliStatus({ installed: true, authenticated: false });
-      setProjectStatus(null);
-      toast('Signed out — run "vercel login" to sign in with a different account', "success");
-    } catch {
-      toast("Failed to sign out", "error");
-    } finally {
-      setIsSwitchingAccount(false);
     }
   };
   const handleDeploy = async () => {
