@@ -237,6 +237,58 @@ const VERCEL_CSS = `
 .vercel-site-dropdown-inner button:hover svg {
   opacity: 1;
 }
+
+/* Dropdown separator */
+.vercel-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* Dropdown action items */
+.vercel-dropdown-action {
+  color: var(--text-muted) !important;
+  font-size: 12px !important;
+  padding: 8px 12px !important;
+  gap: 6px !important;
+}
+
+.vercel-dropdown-action:hover {
+  color: var(--text-secondary) !important;
+}
+
+.vercel-dropdown-action svg {
+  opacity: 0.6;
+}
+
+.vercel-dropdown-action:hover svg {
+  opacity: 1;
+}
+
+.vercel-dropdown-action.vercel-action-danger:hover {
+  color: var(--error, #ef4444) !important;
+}
+
+.vercel-dropdown-action.vercel-action-danger:hover svg {
+  color: var(--error, #ef4444);
+}
+
+/* Account mismatch warning */
+.vercel-button.vercel-mismatch {
+  color: #f59e0b;
+}
+
+.vercel-mismatch-text {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vercel-mismatch-text strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
 `;
 
 // ============ SDK access via window globals ============
@@ -273,11 +325,13 @@ interface VercelCliStatus {
 }
 
 interface ProjectVercelStatus {
-  status: 'not-linked' | 'not-git-connected' | 'connected';
+  status: 'not-linked' | 'not-git-connected' | 'connected' | 'account-mismatch';
   project_name: string | null;
   vercel_org: string | null;
   production_url: string | null;
   staging_url: string | null;
+  linked_account: string | null;
+  current_account: string | null;
 }
 
 interface VercelTeam {
@@ -319,6 +373,8 @@ function VercelToolbar() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [optimisticLinked, setOptimisticLinked] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Inject CSS on mount, remove on unmount
@@ -371,6 +427,7 @@ function VercelToolbar() {
       // Check if authenticated
       const whoamiResult = await shell.exec('vercel', ['whoami']);
       const authenticated = whoamiResult.exit_code === 0;
+      const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
 
       setCliStatus({ installed: true, authenticated });
 
@@ -384,6 +441,8 @@ function VercelToolbar() {
             vercel_org: null,
             production_url: null,
             staging_url: null,
+            linked_account: null,
+            current_account: currentAccount,
           });
           return;
         }
@@ -392,6 +451,7 @@ function VercelToolbar() {
           const projectJson = JSON.parse(catResult.stdout);
           const projectId = projectJson.projectId;
           const orgId = projectJson.orgId;
+          const linkedAccount: string | null = projectJson.linkedAccount || null;
 
           if (!projectId || !orgId) {
             setProjectStatus({
@@ -400,6 +460,22 @@ function VercelToolbar() {
               vercel_org: null,
               production_url: null,
               staging_url: null,
+              linked_account: null,
+              current_account: currentAccount,
+            });
+            return;
+          }
+
+          // Check for account mismatch if linkedAccount is stored
+          if (linkedAccount && currentAccount && linkedAccount !== currentAccount) {
+            setProjectStatus({
+              status: 'account-mismatch',
+              project_name: projectJson.projectName || null,
+              vercel_org: projectJson.orgSlug || null,
+              production_url: null,
+              staging_url: null,
+              linked_account: linkedAccount,
+              current_account: currentAccount,
             });
             return;
           }
@@ -422,6 +498,18 @@ function VercelToolbar() {
             if (urlMatch) {
               productionUrl = urlMatch[1].replace(/^https:\/\//, '');
             }
+          } else if (lsResult && lsResult.exit_code !== 0 && !linkedAccount) {
+            // vercel ls failed and no linkedAccount stored — likely wrong account
+            setProjectStatus({
+              status: 'account-mismatch',
+              project_name: projectJson.projectName || null,
+              vercel_org: projectJson.orgSlug || null,
+              production_url: null,
+              staging_url: null,
+              linked_account: linkedAccount,
+              current_account: currentAccount,
+            });
+            return;
           }
 
           setProjectStatus({
@@ -430,6 +518,8 @@ function VercelToolbar() {
             vercel_org: vercelOrg,
             production_url: productionUrl,
             staging_url: null,
+            linked_account: linkedAccount || currentAccount,
+            current_account: currentAccount,
           });
         } catch {
           setProjectStatus({
@@ -438,6 +528,8 @@ function VercelToolbar() {
             vercel_org: null,
             production_url: null,
             staging_url: null,
+            linked_account: null,
+            current_account: currentAccount,
           });
         }
       }
@@ -512,6 +604,63 @@ function VercelToolbar() {
     );
   }
 
+  // ---- Account mismatch: show warning with actions ----
+  if (projectStatus?.status === 'account-mismatch') {
+    const actionInProgress = isDisconnecting || isSwitchingAccount;
+    return (
+      <div
+        className="vercel-button-container"
+        onMouseEnter={() => setShowSiteDropdown(true)}
+        onMouseLeave={() => !actionInProgress && setShowSiteDropdown(false)}
+      >
+        <button
+          className="toolbar-icon-btn vercel-button vercel-mismatch"
+          title="Account mismatch"
+          onClick={() => setShowSiteDropdown((v) => !v)}
+        >
+          <VercelIcon />
+        </button>
+
+        {showSiteDropdown && (
+          <div className="vercel-site-dropdown">
+            <div className="vercel-site-dropdown-inner">
+              <div className="vercel-mismatch-text">
+                {projectStatus.linked_account ? (
+                  <>This project is linked to <strong>{projectStatus.linked_account}</strong> but you&apos;re signed in as <strong>{projectStatus.current_account}</strong></>
+                ) : (
+                  <>This project was linked to a different account than <strong>{projectStatus.current_account}</strong></>
+                )}
+              </div>
+              <div className="vercel-dropdown-separator" />
+              <button
+                className="vercel-dropdown-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleSwitchAccount();
+                }}
+                disabled={isSwitchingAccount}
+              >
+                <SwitchIcon />
+                {isSwitchingAccount ? 'Switching...' : 'Switch Account'}
+              </button>
+              <button
+                className="vercel-dropdown-action vercel-action-danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDisconnect();
+                }}
+                disabled={isDisconnecting}
+              >
+                <DisconnectIcon />
+                {isDisconnecting ? 'Disconnecting...' : 'Disconnect Project'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ---- Connected: show dashboard link + site dropdown ----
   if (projectStatus?.status === 'connected') {
     const dashboardUrl =
@@ -525,13 +674,13 @@ function VercelToolbar() {
       !isMainBranch && projectStatus.project_name
         ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.vercel.app`
         : null;
-    const hasUrls = productionUrl || previewUrl;
+    const actionInProgress = isDisconnecting || isSwitchingAccount;
 
     return (
       <div
         className="vercel-button-container"
-        onMouseEnter={() => hasUrls && setShowSiteDropdown(true)}
-        onMouseLeave={() => setShowSiteDropdown(false)}
+        onMouseEnter={() => setShowSiteDropdown(true)}
+        onMouseLeave={() => !actionInProgress && setShowSiteDropdown(false)}
       >
         <button
           className="toolbar-icon-btn vercel-button vercel-linked"
@@ -541,7 +690,7 @@ function VercelToolbar() {
           <VercelIcon />
         </button>
 
-        {showSiteDropdown && hasUrls && (
+        {showSiteDropdown && (
           <div className="vercel-site-dropdown">
             <div className="vercel-site-dropdown-inner">
               {productionUrl && (
@@ -568,6 +717,29 @@ function VercelToolbar() {
                   <ExternalLinkIcon />
                 </button>
               )}
+              <div className="vercel-dropdown-separator" />
+              <button
+                className="vercel-dropdown-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleSwitchAccount();
+                }}
+                disabled={isSwitchingAccount}
+              >
+                <SwitchIcon />
+                {isSwitchingAccount ? 'Switching...' : 'Switch Account'}
+              </button>
+              <button
+                className="vercel-dropdown-action vercel-action-danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDisconnect();
+                }}
+                disabled={isDisconnecting}
+              >
+                <DisconnectIcon />
+                {isDisconnecting ? 'Disconnecting...' : 'Disconnect Project'}
+              </button>
             </div>
           </div>
         )}
@@ -651,7 +823,7 @@ function VercelToolbar() {
     }
   };
 
-  // Save org slug + project name from "Linked to <org>/<project>" output
+  // Save org slug + project name + linkedAccount from "Linked to <org>/<project>" output
   const saveLinkMetadata = async (result: { stdout: string; stderr: string }) => {
     const combined = (result.stdout + '\n' + result.stderr).replace(/\x1b\[[0-9;]*m/g, '');
     const match = combined.match(/Linked to\s+(\S+)\/(\S+)/);
@@ -662,6 +834,11 @@ function VercelToolbar() {
       const pj = JSON.parse(pjResult.stdout);
       pj.orgSlug = match[1];
       pj.projectName = match[2];
+      // Store current account for mismatch detection
+      const whoamiResult = await shell.exec('vercel', ['whoami']);
+      if (whoamiResult.exit_code === 0) {
+        pj.linkedAccount = whoamiResult.stdout.trim();
+      }
       const content = JSON.stringify(pj, null, 2);
       await shell.exec('node', [
         '-e',
@@ -669,6 +846,42 @@ function VercelToolbar() {
       ]);
     } catch {
       // non-critical — checkStatus will still work via vercel ls
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await shell.exec('rm', ['-rf', '.vercel']);
+      setProjectStatus({
+        status: 'not-linked',
+        project_name: null,
+        vercel_org: null,
+        production_url: null,
+        staging_url: null,
+        linked_account: null,
+        current_account: null,
+      });
+      setOptimisticLinked(false);
+      toast('Project disconnected from Vercel', 'success');
+    } catch {
+      toast('Failed to disconnect project', 'error');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const handleSwitchAccount = async () => {
+    setIsSwitchingAccount(true);
+    try {
+      await shell.exec('vercel', ['logout']).catch(() => {});
+      setCliStatus({ installed: true, authenticated: false });
+      setProjectStatus(null);
+      toast('Signed out — run "vercel login" to sign in with a different account', 'success');
+    } catch {
+      toast('Failed to sign out', 'error');
+    } finally {
+      setIsSwitchingAccount(false);
     }
   };
 
@@ -985,6 +1198,40 @@ function ExternalLinkIcon() {
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function SwitchIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <polyline points="17 1 21 5 17 9" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <polyline points="7 23 3 19 7 15" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+function DisconnectIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }

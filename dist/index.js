@@ -229,6 +229,58 @@ const VERCEL_CSS = `
 .vercel-site-dropdown-inner button:hover svg {
   opacity: 1;
 }
+
+/* Dropdown separator */
+.vercel-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* Dropdown action items */
+.vercel-dropdown-action {
+  color: var(--text-muted) !important;
+  font-size: 12px !important;
+  padding: 8px 12px !important;
+  gap: 6px !important;
+}
+
+.vercel-dropdown-action:hover {
+  color: var(--text-secondary) !important;
+}
+
+.vercel-dropdown-action svg {
+  opacity: 0.6;
+}
+
+.vercel-dropdown-action:hover svg {
+  opacity: 1;
+}
+
+.vercel-dropdown-action.vercel-action-danger:hover {
+  color: var(--error, #ef4444) !important;
+}
+
+.vercel-dropdown-action.vercel-action-danger:hover svg {
+  color: var(--error, #ef4444);
+}
+
+/* Account mismatch warning */
+.vercel-button.vercel-mismatch {
+  color: #f59e0b;
+}
+
+.vercel-mismatch-text {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vercel-mismatch-text strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
 `;
 function getCtx() {
   const ctx = window.__SHIPSTUDIO_PLUGIN_CONTEXT__;
@@ -259,6 +311,8 @@ function VercelToolbar() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [optimisticLinked, setOptimisticLinked] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   const pollRef = useRef(null);
   useEffect(() => {
     const style = document.createElement("style");
@@ -298,6 +352,7 @@ function VercelToolbar() {
       }
       const whoamiResult = await shell.exec("vercel", ["whoami"]);
       const authenticated = whoamiResult.exit_code === 0;
+      const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
       setCliStatus({ installed: true, authenticated });
       if (authenticated && (project == null ? void 0 : project.path)) {
         const catResult = await shell.exec("cat", [".vercel/project.json"]);
@@ -307,7 +362,9 @@ function VercelToolbar() {
             project_name: null,
             vercel_org: null,
             production_url: null,
-            staging_url: null
+            staging_url: null,
+            linked_account: null,
+            current_account: currentAccount
           });
           return;
         }
@@ -315,13 +372,28 @@ function VercelToolbar() {
           const projectJson = JSON.parse(catResult.stdout);
           const projectId = projectJson.projectId;
           const orgId = projectJson.orgId;
+          const linkedAccount = projectJson.linkedAccount || null;
           if (!projectId || !orgId) {
             setProjectStatus({
               status: "not-linked",
               project_name: null,
               vercel_org: null,
               production_url: null,
-              staging_url: null
+              staging_url: null,
+              linked_account: null,
+              current_account: currentAccount
+            });
+            return;
+          }
+          if (linkedAccount && currentAccount && linkedAccount !== currentAccount) {
+            setProjectStatus({
+              status: "account-mismatch",
+              project_name: projectJson.projectName || null,
+              vercel_org: projectJson.orgSlug || null,
+              production_url: null,
+              staging_url: null,
+              linked_account: linkedAccount,
+              current_account: currentAccount
             });
             return;
           }
@@ -340,13 +412,26 @@ function VercelToolbar() {
             if (urlMatch) {
               productionUrl = urlMatch[1].replace(/^https:\/\//, "");
             }
+          } else if (lsResult && lsResult.exit_code !== 0 && !linkedAccount) {
+            setProjectStatus({
+              status: "account-mismatch",
+              project_name: projectJson.projectName || null,
+              vercel_org: projectJson.orgSlug || null,
+              production_url: null,
+              staging_url: null,
+              linked_account: linkedAccount,
+              current_account: currentAccount
+            });
+            return;
           }
           setProjectStatus({
             status: "connected",
             project_name: projectName,
             vercel_org: vercelOrg,
             production_url: productionUrl,
-            staging_url: null
+            staging_url: null,
+            linked_account: linkedAccount || currentAccount,
+            current_account: currentAccount
           });
         } catch {
           setProjectStatus({
@@ -354,7 +439,9 @@ function VercelToolbar() {
             project_name: null,
             vercel_org: null,
             production_url: null,
-            staging_url: null
+            staging_url: null,
+            linked_account: null,
+            current_account: currentAccount
           });
         }
       }
@@ -417,19 +504,83 @@ function VercelToolbar() {
       /* @__PURE__ */ jsx("span", { className: "deploying-text", children: "Deploying..." })
     ] });
   }
+  if ((projectStatus == null ? void 0 : projectStatus.status) === "account-mismatch") {
+    const actionInProgress = isDisconnecting || isSwitchingAccount;
+    return /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: "vercel-button-container",
+        onMouseEnter: () => setShowSiteDropdown(true),
+        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false),
+        children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              className: "toolbar-icon-btn vercel-button vercel-mismatch",
+              title: "Account mismatch",
+              onClick: () => setShowSiteDropdown((v) => !v),
+              children: /* @__PURE__ */ jsx(VercelIcon, {})
+            }
+          ),
+          showSiteDropdown && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
+            /* @__PURE__ */ jsx("div", { className: "vercel-mismatch-text", children: projectStatus.linked_account ? /* @__PURE__ */ jsxs(Fragment, { children: [
+              "This project is linked to ",
+              /* @__PURE__ */ jsx("strong", { children: projectStatus.linked_account }),
+              " but you're signed in as ",
+              /* @__PURE__ */ jsx("strong", { children: projectStatus.current_account })
+            ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+              "This project was linked to a different account than ",
+              /* @__PURE__ */ jsx("strong", { children: projectStatus.current_account })
+            ] }) }),
+            /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                className: "vercel-dropdown-action",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void handleSwitchAccount();
+                },
+                disabled: isSwitchingAccount,
+                children: [
+                  /* @__PURE__ */ jsx(SwitchIcon, {}),
+                  isSwitchingAccount ? "Switching..." : "Switch Account"
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                className: "vercel-dropdown-action vercel-action-danger",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void handleDisconnect();
+                },
+                disabled: isDisconnecting,
+                children: [
+                  /* @__PURE__ */ jsx(DisconnectIcon, {}),
+                  isDisconnecting ? "Disconnecting..." : "Disconnect Project"
+                ]
+              }
+            )
+          ] }) })
+        ]
+      }
+    );
+  }
   if ((projectStatus == null ? void 0 : projectStatus.status) === "connected") {
     const dashboardUrl = projectStatus.vercel_org && projectStatus.project_name ? `https://vercel.com/${projectStatus.vercel_org}/${projectStatus.project_name}` : "https://vercel.com/dashboard";
     const productionUrl = projectStatus.production_url;
     const branch = project.currentBranch || "main";
     const isMainBranch = branch === "main" || branch === "master";
     const previewUrl = !isMainBranch && projectStatus.project_name ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}.vercel.app` : null;
-    const hasUrls = productionUrl || previewUrl;
+    const actionInProgress = isDisconnecting || isSwitchingAccount;
     return /* @__PURE__ */ jsxs(
       "div",
       {
         className: "vercel-button-container",
-        onMouseEnter: () => hasUrls && setShowSiteDropdown(true),
-        onMouseLeave: () => setShowSiteDropdown(false),
+        onMouseEnter: () => setShowSiteDropdown(true),
+        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false),
         children: [
           /* @__PURE__ */ jsx(
             "button",
@@ -440,7 +591,7 @@ function VercelToolbar() {
               children: /* @__PURE__ */ jsx(VercelIcon, {})
             }
           ),
-          showSiteDropdown && hasUrls && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
+          showSiteDropdown && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
             productionUrl && /* @__PURE__ */ jsxs(
               "button",
               {
@@ -466,6 +617,37 @@ function VercelToolbar() {
                   /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-preview", children: "Preview" }),
                   /* @__PURE__ */ jsx("span", { className: "vercel-site-url", children: previewUrl }),
                   /* @__PURE__ */ jsx(ExternalLinkIcon, {})
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                className: "vercel-dropdown-action",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void handleSwitchAccount();
+                },
+                disabled: isSwitchingAccount,
+                children: [
+                  /* @__PURE__ */ jsx(SwitchIcon, {}),
+                  isSwitchingAccount ? "Switching..." : "Switch Account"
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                className: "vercel-dropdown-action vercel-action-danger",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void handleDisconnect();
+                },
+                disabled: isDisconnecting,
+                children: [
+                  /* @__PURE__ */ jsx(DisconnectIcon, {}),
+                  isDisconnecting ? "Disconnecting..." : "Disconnect Project"
                 ]
               }
             )
@@ -538,12 +720,51 @@ function VercelToolbar() {
       const pj = JSON.parse(pjResult.stdout);
       pj.orgSlug = match[1];
       pj.projectName = match[2];
+      const whoamiResult = await shell.exec("vercel", ["whoami"]);
+      if (whoamiResult.exit_code === 0) {
+        pj.linkedAccount = whoamiResult.stdout.trim();
+      }
       const content = JSON.stringify(pj, null, 2);
       await shell.exec("node", [
         "-e",
         `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`
       ]);
     } catch {
+    }
+  };
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await shell.exec("rm", ["-rf", ".vercel"]);
+      setProjectStatus({
+        status: "not-linked",
+        project_name: null,
+        vercel_org: null,
+        production_url: null,
+        staging_url: null,
+        linked_account: null,
+        current_account: null
+      });
+      setOptimisticLinked(false);
+      toast("Project disconnected from Vercel", "success");
+    } catch {
+      toast("Failed to disconnect project", "error");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+  const handleSwitchAccount = async () => {
+    setIsSwitchingAccount(true);
+    try {
+      await shell.exec("vercel", ["logout"]).catch(() => {
+      });
+      setCliStatus({ installed: true, authenticated: false });
+      setProjectStatus(null);
+      toast('Signed out — run "vercel login" to sign in with a different account', "success");
+    } catch {
+      toast("Failed to sign out", "error");
+    } finally {
+      setIsSwitchingAccount(false);
     }
   };
   const handleDeploy = async () => {
@@ -804,6 +1025,42 @@ function ExternalLinkIcon() {
         /* @__PURE__ */ jsx("path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }),
         /* @__PURE__ */ jsx("polyline", { points: "15 3 21 3 21 9" }),
         /* @__PURE__ */ jsx("line", { x1: "10", y1: "14", x2: "21", y2: "3" })
+      ]
+    }
+  );
+}
+function SwitchIcon() {
+  return /* @__PURE__ */ jsxs(
+    "svg",
+    {
+      width: "12",
+      height: "12",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      children: [
+        /* @__PURE__ */ jsx("polyline", { points: "17 1 21 5 17 9" }),
+        /* @__PURE__ */ jsx("path", { d: "M3 11V9a4 4 0 0 1 4-4h14" }),
+        /* @__PURE__ */ jsx("polyline", { points: "7 23 3 19 7 15" }),
+        /* @__PURE__ */ jsx("path", { d: "M21 13v2a4 4 0 0 1-4 4H3" })
+      ]
+    }
+  );
+}
+function DisconnectIcon() {
+  return /* @__PURE__ */ jsxs(
+    "svg",
+    {
+      width: "12",
+      height: "12",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      children: [
+        /* @__PURE__ */ jsx("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
+        /* @__PURE__ */ jsx("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
       ]
     }
   );
