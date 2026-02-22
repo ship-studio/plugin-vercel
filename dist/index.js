@@ -211,6 +211,11 @@ const VERCEL_CSS = `
   background: rgba(96, 165, 250, 0.12);
 }
 
+.vercel-site-badge-deploy {
+  color: rgba(168, 162, 158, 0.9);
+  background: rgba(168, 162, 158, 0.12);
+}
+
 .vercel-site-url {
   flex: 1;
   min-width: 0;
@@ -630,7 +635,6 @@ function VercelToolbar() {
             return;
           }
           let projectName = projectJson.projectName || null;
-          let productionUrl = null;
           let vercelOrg = projectJson.orgSlug || null;
           const lsResult = await shell.exec("sh", ["-c", "vercel ls --no-color 2>&1"]).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
@@ -639,10 +643,6 @@ function VercelToolbar() {
             if (headerMatch) {
               vercelOrg = headerMatch[1];
               if (!projectName) projectName = headerMatch[2];
-            }
-            const urlMatch = lsOutput.match(/(https:\/\/\S+\.vercel\.app)/);
-            if (urlMatch) {
-              productionUrl = urlMatch[1].replace(/^https:\/\//, "");
             }
           } else if (lsResult && lsResult.exit_code !== 0 && !linkedAccount) {
             setProjectStatus({
@@ -656,6 +656,8 @@ function VercelToolbar() {
             });
             return;
           }
+          const domains = await fetchProjectDomains(projectId);
+          const productionUrl = domains.length > 0 ? domains[0] : null;
           setProjectStatus({
             status: "connected",
             project_name: projectName,
@@ -709,6 +711,43 @@ function VercelToolbar() {
       return null;
     } catch {
       return null;
+    }
+  };
+  const fetchProjectDomains = async (projectId) => {
+    try {
+      const script = `
+const fs = require('fs'), os = require('os'), https = require('https');
+const home = os.homedir();
+const paths = [
+  home + '/Library/Application Support/com.vercel.cli/auth.json',
+  home + '/.local/share/com.vercel.cli/auth.json',
+  home + '/.config/com.vercel.cli/auth.json',
+  home + '/.vercel/auth.json'
+];
+let token = null;
+for (const p of paths) {
+  try { token = JSON.parse(fs.readFileSync(p, 'utf8')).token; if (token) break; } catch {}
+}
+if (!token) { console.log('[]'); process.exit(0); }
+https.get({
+  hostname: 'api.vercel.com',
+  path: '/v9/projects/' + encodeURIComponent(process.argv[1]) + '/domains',
+  headers: { Authorization: 'Bearer ' + token }
+}, (res) => {
+  let d = '';
+  res.on('data', c => d += c);
+  res.on('end', () => {
+    try {
+      const p = JSON.parse(d);
+      console.log(JSON.stringify((p.domains || []).filter(x => !x.gitBranch).map(x => x.name)));
+    } catch { console.log('[]'); }
+  });
+}).on('error', () => console.log('[]'));`;
+      const result = await shell.exec("node", ["-e", script, projectId], { timeout: 1e4 });
+      if (result.exit_code !== 0) return [];
+      return JSON.parse(result.stdout.trim());
+    } catch {
+      return [];
     }
   };
   if (!cliStatus) return null;
@@ -955,7 +994,21 @@ function VercelToolbar() {
                 ]
               }
             ),
-            /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
+            (latestDeployment == null ? void 0 : latestDeployment.url) && /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: (e) => {
+                  e.stopPropagation();
+                  openUrl(`https://${latestDeployment.url}`);
+                },
+                children: [
+                  /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-deploy", children: "Deploy" }),
+                  /* @__PURE__ */ jsx("span", { className: "vercel-site-url", children: latestDeployment.url }),
+                  /* @__PURE__ */ jsx(ExternalLinkIcon, {})
+                ]
+              }
+            ),
+            (productionUrl || previewUrl || (latestDeployment == null ? void 0 : latestDeployment.url)) && /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
             /* @__PURE__ */ jsxs(
               "button",
               {
