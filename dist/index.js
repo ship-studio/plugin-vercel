@@ -281,11 +281,152 @@ const VERCEL_CSS = `
   color: var(--text-primary);
   font-weight: 600;
 }
+
+/* Deployment status dot overlay on toolbar button */
+.vercel-status-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.vercel-status-dot-building {
+  background: #f59e0b;
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.vercel-status-dot-error {
+  background: #ef4444;
+}
+
+.vercel-status-dot-ready {
+  background: #22c55e;
+  animation: statusFadeOut 0.5s ease-out 5s forwards;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes statusFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Button status modifiers */
+.vercel-button.vercel-status-error {
+  color: #ef4444;
+}
+
+.vercel-button.vercel-status-building {
+  animation: deployPulse 1.5s ease-in-out infinite;
+}
+
+/* Deployment status section in dropdown */
+.vercel-deploy-status {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.vercel-deploy-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.vercel-deploy-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vercel-deploy-indicator-building,
+.vercel-deploy-indicator-queued,
+.vercel-deploy-indicator-initializing {
+  background: #f59e0b;
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.vercel-deploy-indicator-error {
+  background: #ef4444;
+}
+
+.vercel-deploy-indicator-ready {
+  background: #22c55e;
+}
+
+.vercel-deploy-indicator-canceled {
+  background: var(--text-muted);
+}
+
+.vercel-deploy-age {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.vercel-deploy-error-link {
+  color: #ef4444 !important;
+  font-size: 12px !important;
+}
+
+.vercel-deploy-error-link:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
 `;
 function getCtx() {
   const ctx = window.__SHIPSTUDIO_PLUGIN_CONTEXT__;
   if (!ctx) throw new Error("Plugin context not available");
   return ctx;
+}
+function deployStatusLabel(status) {
+  switch (status) {
+    case "READY":
+      return "Ready";
+    case "BUILDING":
+      return "Building...";
+    case "ERROR":
+      return "Error";
+    case "QUEUED":
+      return "Queued...";
+    case "CANCELED":
+      return "Canceled";
+    case "INITIALIZING":
+      return "Initializing...";
+  }
+}
+function parseAgeToSeconds(age) {
+  const match = age.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) return 0;
+  const value = parseInt(match[1], 10);
+  switch (match[2]) {
+    case "s":
+      return value;
+    case "m":
+      return value * 60;
+    case "h":
+      return value * 3600;
+    case "d":
+      return value * 86400;
+    default:
+      return 0;
+  }
+}
+function formatSecondsToAge(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
 }
 function VercelToolbar() {
   const ctx = getCtx();
@@ -315,6 +456,11 @@ function VercelToolbar() {
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const pollRef = useRef(null);
+  const [latestDeployment, setLatestDeployment] = useState(null);
+  const prevDeployStatusRef = useRef(null);
+  const [displayAge, setDisplayAge] = useState(null);
+  const ageBaseRef = useRef(null);
+  const optimisticBuildRef = useRef(null);
   useEffect(() => {
     const style = document.createElement("style");
     style.setAttribute("data-vercel-plugin", "true");
@@ -341,6 +487,91 @@ function VercelToolbar() {
     }, 3e3);
     return () => clearInterval(interval);
   }, [hasGitRemote]);
+  useEffect(() => {
+    if ((projectStatus == null ? void 0 : projectStatus.status) !== "connected") return;
+    let cancelled = false;
+    let timeoutId = null;
+    const poll = async () => {
+      const deployment = await fetchLatestDeployment();
+      if (cancelled) return;
+      if (optimisticBuildRef.current) {
+        const elapsed = Date.now() - optimisticBuildRef.current;
+        const isRealBuild = deployment && (deployment.status === "BUILDING" || deployment.status === "QUEUED" || deployment.status === "INITIALIZING");
+        if (isRealBuild) {
+          optimisticBuildRef.current = null;
+        } else if (elapsed < 3e4) {
+          if (!cancelled) timeoutId = setTimeout(() => void poll(), 3e3);
+          return;
+        } else {
+          optimisticBuildRef.current = null;
+        }
+      }
+      if (deployment) {
+        const prevStatus = prevDeployStatusRef.current;
+        if (prevStatus !== null) {
+          const wasActive = prevStatus === "BUILDING" || prevStatus === "QUEUED" || prevStatus === "INITIALIZING";
+          if (wasActive && deployment.status === "READY") {
+            toast("Deployment is live!", "success");
+          } else if (wasActive && deployment.status === "ERROR") {
+            toast("Deployment failed", "error");
+          }
+        }
+        prevDeployStatusRef.current = deployment.status;
+        setLatestDeployment(deployment);
+      }
+      if (cancelled) return;
+      const isActive = deployment && (deployment.status === "BUILDING" || deployment.status === "QUEUED" || deployment.status === "INITIALIZING");
+      const delay = isActive ? 5e3 : 15e3;
+      timeoutId = setTimeout(() => void poll(), delay);
+    };
+    timeoutId = setTimeout(() => void poll(), 2e3);
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [projectStatus == null ? void 0 : projectStatus.status]);
+  useEffect(() => {
+    if (!(latestDeployment == null ? void 0 : latestDeployment.age)) return;
+    const seconds = parseAgeToSeconds(latestDeployment.age);
+    ageBaseRef.current = { seconds, timestamp: Date.now() };
+    setDisplayAge(formatSecondsToAge(seconds));
+  }, [latestDeployment == null ? void 0 : latestDeployment.age]);
+  useEffect(() => {
+    if (!latestDeployment) return;
+    const isActive = latestDeployment.status === "BUILDING" || latestDeployment.status === "QUEUED" || latestDeployment.status === "INITIALIZING";
+    if (!isActive || !ageBaseRef.current) return;
+    const interval = setInterval(() => {
+      if (!ageBaseRef.current) return;
+      const elapsed = Math.floor((Date.now() - ageBaseRef.current.timestamp) / 1e3);
+      setDisplayAge(formatSecondsToAge(ageBaseRef.current.seconds + elapsed));
+    }, 1e3);
+    return () => clearInterval(interval);
+  }, [latestDeployment == null ? void 0 : latestDeployment.status, latestDeployment == null ? void 0 : latestDeployment.age]);
+  useEffect(() => {
+    if ((projectStatus == null ? void 0 : projectStatus.status) !== "connected") return;
+    let cancelled = false;
+    let lastRemoteSha = null;
+    const check = async () => {
+      const branch = project.currentBranch || "main";
+      const result = await shell.exec("git", ["rev-parse", `origin/${branch}`]).catch(() => null);
+      if (cancelled || !result || result.exit_code !== 0) return;
+      const sha = result.stdout.trim();
+      if (lastRemoteSha !== null && sha !== lastRemoteSha) {
+        optimisticBuildRef.current = Date.now();
+        prevDeployStatusRef.current = null;
+        setLatestDeployment({ status: "BUILDING", url: "", age: "" });
+        setDisplayAge("waiting");
+        ageBaseRef.current = null;
+      }
+      lastRemoteSha = sha;
+    };
+    const interval = setInterval(() => void check(), 3e3);
+    void check();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [projectStatus == null ? void 0 : projectStatus.status, project == null ? void 0 : project.currentBranch]);
   const checkStatus = async () => {
     try {
       const remoteResult = await shell.exec("git", ["remote", "-v"]);
@@ -448,6 +679,36 @@ function VercelToolbar() {
       }
     } catch {
       setCliStatus({ installed: false, authenticated: false });
+    }
+  };
+  const fetchLatestDeployment = async () => {
+    try {
+      const result = await shell.exec("sh", ["-c", "vercel ls --no-color 2>&1"], { timeout: 15e3 });
+      if (result.exit_code !== 0) return null;
+      const lines = result.stdout.split("\n");
+      let headerIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes("Status")) {
+          headerIndex = i;
+          break;
+        }
+      }
+      if (headerIndex === -1) return null;
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const statusMatch = line.match(/●\s*(Ready|Building|Error|Queued|Canceled|Initializing)/i);
+        if (!statusMatch) continue;
+        const statusText = statusMatch[1].toUpperCase();
+        const urlMatch = line.match(/(\S+\.vercel\.app)/);
+        const url = urlMatch ? urlMatch[1] : "";
+        const ageMatch = line.match(/^\s*(\S+)/);
+        const age = ageMatch ? ageMatch[1] : "";
+        return { status: statusText, url, age };
+      }
+      return null;
+    } catch {
+      return null;
     }
   };
   if (!cliStatus) return null;
@@ -629,16 +890,43 @@ function VercelToolbar() {
         onMouseEnter: () => setShowSiteDropdown(true),
         onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false),
         children: [
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsxs(
             "button",
             {
-              className: "toolbar-icon-btn vercel-button vercel-linked",
-              onClick: () => openUrl(dashboardUrl),
-              title: "Open Vercel dashboard",
-              children: /* @__PURE__ */ jsx(VercelIcon, {})
+              className: `toolbar-icon-btn vercel-button vercel-linked${(latestDeployment == null ? void 0 : latestDeployment.status) === "ERROR" ? " vercel-status-error" : ""}${(latestDeployment == null ? void 0 : latestDeployment.status) === "BUILDING" || (latestDeployment == null ? void 0 : latestDeployment.status) === "QUEUED" || (latestDeployment == null ? void 0 : latestDeployment.status) === "INITIALIZING" ? " vercel-status-building" : ""}`,
+              onClick: () => setShowSiteDropdown((v) => !v),
+              title: "Vercel deployment status",
+              children: [
+                /* @__PURE__ */ jsx(VercelIcon, {}),
+                latestDeployment && /* @__PURE__ */ jsx(StatusDot, { status: latestDeployment.status })
+              ]
             }
           ),
           showSiteDropdown && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
+            latestDeployment && /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsxs("div", { className: "vercel-deploy-status", children: [
+                /* @__PURE__ */ jsxs("div", { className: "vercel-deploy-status-row", children: [
+                  /* @__PURE__ */ jsx("span", { className: `vercel-deploy-indicator vercel-deploy-indicator-${latestDeployment.status.toLowerCase()}` }),
+                  /* @__PURE__ */ jsx("span", { children: deployStatusLabel(latestDeployment.status) })
+                ] }),
+                displayAge && /* @__PURE__ */ jsx("span", { className: "vercel-deploy-age", children: displayAge })
+              ] }),
+              latestDeployment.status === "ERROR" && /* @__PURE__ */ jsxs(
+                "button",
+                {
+                  className: "vercel-dropdown-action vercel-deploy-error-link",
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    openUrl(`https://vercel.com/${projectStatus.vercel_org}/${projectStatus.project_name}/deployments`);
+                  },
+                  children: [
+                    /* @__PURE__ */ jsx(ExternalLinkIcon, {}),
+                    "View build logs"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" })
+            ] }),
             productionUrl && /* @__PURE__ */ jsxs(
               "button",
               {
@@ -668,6 +956,20 @@ function VercelToolbar() {
               }
             ),
             /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                className: "vercel-dropdown-action",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  openUrl(dashboardUrl);
+                },
+                children: [
+                  /* @__PURE__ */ jsx(ExternalLinkIcon, {}),
+                  "View Dashboard"
+                ]
+              }
+            ),
             /* @__PURE__ */ jsxs(
               "button",
               {
@@ -1076,6 +1378,17 @@ function DisconnectIcon() {
       ]
     }
   );
+}
+function StatusDot({ status }) {
+  let className = "vercel-status-dot";
+  if (status === "BUILDING" || status === "QUEUED" || status === "INITIALIZING") {
+    className += " vercel-status-dot-building";
+  } else if (status === "ERROR") {
+    className += " vercel-status-dot-error";
+  } else if (status === "READY") {
+    className += " vercel-status-dot-ready";
+  }
+  return /* @__PURE__ */ jsx("span", { className });
 }
 const name = "Vercel";
 const slots = {
