@@ -1,4 +1,4 @@
-import { jsxs, jsx, Fragment } from "data:text/javascript,const R=window.__SHIPSTUDIO_REACT__;export const jsx=R.createElement;export const jsxs=R.createElement;export const Fragment=R.Fragment;";
+import { jsx, jsxs, Fragment } from "data:text/javascript,const R=window.__SHIPSTUDIO_REACT__;export const jsx=R.createElement;export const jsxs=R.createElement;export const Fragment=R.Fragment;";
 import { useState, useRef, useEffect } from "data:text/javascript,export default window.__SHIPSTUDIO_REACT__;export const useState=window.__SHIPSTUDIO_REACT__.useState;export const useEffect=window.__SHIPSTUDIO_REACT__.useEffect;export const useRef=window.__SHIPSTUDIO_REACT__.useRef;export const useCallback=window.__SHIPSTUDIO_REACT__.useCallback;export const useMemo=window.__SHIPSTUDIO_REACT__.useMemo;export const createElement=window.__SHIPSTUDIO_REACT__.createElement;";
 const VERCEL_CSS = `
 /* Vercel Integration - Workspace Header */
@@ -750,9 +750,12 @@ https.get({
       return [];
     }
   };
-  if (!cliStatus) return null;
-  if (!project) return null;
-  if (!hasGitRemote && (projectStatus == null ? void 0 : projectStatus.status) !== "connected") return null;
+  if (!cliStatus || !project) {
+    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+  }
+  if (!hasGitRemote && (projectStatus == null ? void 0 : projectStatus.status) !== "connected") {
+    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Push to GitHub to enable Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+  }
   if (!cliStatus.installed) {
     return /* @__PURE__ */ jsxs(
       "button",

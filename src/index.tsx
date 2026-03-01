@@ -882,14 +882,22 @@ https.get({
     }
   };
 
-  // Don't render anything if CLI status hasn't been checked yet
-  if (!cliStatus) return null;
+  // Always render the icon so the plugin list shows it, but disable when not ready
+  if (!cliStatus || !project) {
+    return (
+      <button className="toolbar-icon-btn vercel-button" disabled title="Vercel">
+        <VercelIcon />
+      </button>
+    );
+  }
 
-  // Don't show unless we have a project open
-  if (!project) return null;
-
-  // Hide until a git remote is configured (unless already connected)
-  if (!hasGitRemote && projectStatus?.status !== 'connected') return null;
+  if (!hasGitRemote && projectStatus?.status !== 'connected') {
+    return (
+      <button className="toolbar-icon-btn vercel-button" disabled title="Push to GitHub to enable Vercel">
+        <VercelIcon />
+      </button>
+    );
+  }
 
   // ---- Install CLI ----
   if (!cliStatus.installed) {
