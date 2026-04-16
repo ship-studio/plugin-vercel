@@ -390,9 +390,16 @@ const VERCEL_CSS = `
 }
 `;
 function getCtx() {
-  const ctx = window.__SHIPSTUDIO_PLUGIN_CONTEXT__;
-  if (!ctx) throw new Error("Plugin context not available");
-  return ctx;
+  const _w = window;
+  const React = _w.__SHIPSTUDIO_REACT__;
+  const CtxRef = _w.__SHIPSTUDIO_PLUGIN_CONTEXT_REF__;
+  if (CtxRef && (React == null ? void 0 : React.useContext)) {
+    const ctx = React.useContext(CtxRef);
+    if (ctx) return ctx;
+  }
+  const directCtx = _w.__SHIPSTUDIO_PLUGIN_CONTEXT__;
+  if (directCtx) return directCtx;
+  throw new Error("Plugin context not available");
 }
 function deployStatusLabel(status) {
   switch (status) {

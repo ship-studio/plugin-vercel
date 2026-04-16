@@ -418,11 +418,21 @@ interface PluginContext {
 }
 
 function getCtx(): PluginContext {
-  const ctx = (window as Record<string, unknown>).__SHIPSTUDIO_PLUGIN_CONTEXT__ as
-    | PluginContext
-    | undefined;
-  if (!ctx) throw new Error('Plugin context not available');
-  return ctx;
+  // Try React Context ref first (newer API)
+  const _w = window as any;
+  const React = _w.__SHIPSTUDIO_REACT__;
+  const CtxRef = _w.__SHIPSTUDIO_PLUGIN_CONTEXT_REF__;
+
+  if (CtxRef && React?.useContext) {
+    const ctx = React.useContext(CtxRef) as PluginContext | null;
+    if (ctx) return ctx;
+  }
+
+  // Fall back to legacy global
+  const directCtx = _w.__SHIPSTUDIO_PLUGIN_CONTEXT__ as PluginContext | undefined;
+  if (directCtx) return directCtx;
+
+  throw new Error('Plugin context not available');
 }
 
 // ============ Types ============
