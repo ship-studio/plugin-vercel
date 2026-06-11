@@ -854,6 +854,49 @@ function VercelToolbar() {
     }
   };
 
+  // Map team slug -> real team ID (team_xxx). The CLI rejects `--scope <slug>`
+  // with "You cannot set your Personal Account as the scope" when the slug
+  // happens to match the user's username/email, so we pass team IDs instead.
+  const fetchTeamIdMap = async (): Promise<Record<string, string>> => {
+    try {
+      const script = `
+const fs = require('fs'), os = require('os'), https = require('https');
+const home = os.homedir();
+const paths = [
+  home + '/Library/Application Support/com.vercel.cli/auth.json',
+  home + '/.local/share/com.vercel.cli/auth.json',
+  home + '/.config/com.vercel.cli/auth.json',
+  home + '/.vercel/auth.json'
+];
+let token = null;
+for (const p of paths) {
+  try { token = JSON.parse(fs.readFileSync(p, 'utf8')).token; if (token) break; } catch {}
+}
+if (!token) { console.log('{}'); process.exit(0); }
+https.get({
+  hostname: 'api.vercel.com',
+  path: '/v2/teams?limit=100',
+  headers: { Authorization: 'Bearer ' + token }
+}, (res) => {
+  let d = '';
+  res.on('data', c => d += c);
+  res.on('end', () => {
+    try {
+      const p = JSON.parse(d);
+      const map = {};
+      for (const t of p.teams || []) { if (t.slug && t.id) map[t.slug] = t.id; }
+      console.log(JSON.stringify(map));
+    } catch { console.log('{}'); }
+  });
+}).on('error', () => console.log('{}'));`;
+      const result = await shell.exec('node', ['-e', script], { timeout: 10000 });
+      if (result.exit_code !== 0) return {};
+      return JSON.parse(result.stdout.trim());
+    } catch {
+      return {};
+    }
+  };
+
   const fetchProjectDomains = async (projectId: string): Promise<string[]> => {
     try {
       const script = `
@@ -1445,8 +1488,13 @@ https.get({
         }
       }
 
-      setTeams(fetchedTeams);
-      const currentTeam = fetchedTeams.find((t) => t.is_current);
+      // Replace slugs with real team IDs so `--scope` can never be mistaken
+      // for the user's personal account (e.g. username matching a team slug)
+      const idMap = await fetchTeamIdMap();
+      const resolvedTeams = fetchedTeams.map((t) => ({ ...t, id: idMap[t.id] || t.id }));
+
+      setTeams(resolvedTeams);
+      const currentTeam = resolvedTeams.find((t) => t.is_current);
       setSelectedScope(currentTeam ? currentTeam.id : undefined);
     } catch {
       setTeams([]);

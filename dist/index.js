@@ -720,6 +720,45 @@ function VercelToolbar() {
       return null;
     }
   };
+  const fetchTeamIdMap = async () => {
+    try {
+      const script = `
+const fs = require('fs'), os = require('os'), https = require('https');
+const home = os.homedir();
+const paths = [
+  home + '/Library/Application Support/com.vercel.cli/auth.json',
+  home + '/.local/share/com.vercel.cli/auth.json',
+  home + '/.config/com.vercel.cli/auth.json',
+  home + '/.vercel/auth.json'
+];
+let token = null;
+for (const p of paths) {
+  try { token = JSON.parse(fs.readFileSync(p, 'utf8')).token; if (token) break; } catch {}
+}
+if (!token) { console.log('{}'); process.exit(0); }
+https.get({
+  hostname: 'api.vercel.com',
+  path: '/v2/teams?limit=100',
+  headers: { Authorization: 'Bearer ' + token }
+}, (res) => {
+  let d = '';
+  res.on('data', c => d += c);
+  res.on('end', () => {
+    try {
+      const p = JSON.parse(d);
+      const map = {};
+      for (const t of p.teams || []) { if (t.slug && t.id) map[t.slug] = t.id; }
+      console.log(JSON.stringify(map));
+    } catch { console.log('{}'); }
+  });
+}).on('error', () => console.log('{}'));`;
+      const result = await shell.exec("node", ["-e", script], { timeout: 1e4 });
+      if (result.exit_code !== 0) return {};
+      return JSON.parse(result.stdout.trim());
+    } catch {
+      return {};
+    }
+  };
   const fetchProjectDomains = async (projectId) => {
     try {
       const script = `
@@ -1243,8 +1282,10 @@ https.get({
           });
         }
       }
-      setTeams(fetchedTeams);
-      const currentTeam = fetchedTeams.find((t) => t.is_current);
+      const idMap = await fetchTeamIdMap();
+      const resolvedTeams = fetchedTeams.map((t) => ({ ...t, id: idMap[t.id] || t.id }));
+      setTeams(resolvedTeams);
+      const currentTeam = resolvedTeams.find((t) => t.is_current);
       setSelectedScope(currentTeam ? currentTeam.id : void 0);
     } catch {
       setTeams([]);
