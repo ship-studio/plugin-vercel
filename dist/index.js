@@ -401,6 +401,32 @@ function getCtx() {
   if (directCtx) return directCtx;
   throw new Error("Plugin context not available");
 }
+const IS_WINDOWS = typeof navigator !== "undefined" && (/Windows/i.test(navigator.userAgent || "") || /Win/i.test(navigator.platform || ""));
+const WIN_SHIM_TOOLS = /* @__PURE__ */ new Set(["vercel", "npm", "npx", "brew", "yarn", "pnpm"]);
+function quoteForCmd(arg) {
+  if (arg === "" || /[\s"&|<>^()%]/.test(arg)) {
+    return '"' + arg.replace(/"/g, '""') + '"';
+  }
+  return arg;
+}
+function execTool(shell, command, args, options) {
+  if (IS_WINDOWS && WIN_SHIM_TOOLS.has(command)) {
+    const line = [command, ...args].map(quoteForCmd).join(" ");
+    return shell.exec("cmd", ["/c", line], options);
+  }
+  return shell.exec(command, args, options);
+}
+function execShell(shell, cmdLine, options) {
+  return IS_WINDOWS ? shell.exec("cmd", ["/c", cmdLine], options) : shell.exec("sh", ["-c", cmdLine], options);
+}
+function readFile(shell, path, options) {
+  const script = `try{process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))}catch(e){process.exit(1)}`;
+  return shell.exec("node", ["-e", script, path], options);
+}
+function removePath(shell, path, options) {
+  const script = `require('fs').rmSync(process.argv[1],{recursive:true,force:true})`;
+  return shell.exec("node", ["-e", script, path], options);
+}
 function deployStatusLabel(status) {
   switch (status) {
     case "READY":
@@ -588,18 +614,18 @@ function VercelToolbar() {
     try {
       const remoteResult = await shell.exec("git", ["remote", "-v"]);
       setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
-      const versionResult = await shell.exec("vercel", ["--version"]);
+      const versionResult = await execTool(shell, "vercel", ["--version"]);
       const installed = versionResult.exit_code === 0;
       if (!installed) {
         setCliStatus({ installed: false, authenticated: false });
         return;
       }
-      const whoamiResult = await shell.exec("vercel", ["whoami"]);
+      const whoamiResult = await execTool(shell, "vercel", ["whoami"]);
       const authenticated = whoamiResult.exit_code === 0;
       const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
       setCliStatus({ installed: true, authenticated });
       if (authenticated && (project == null ? void 0 : project.path)) {
-        const catResult = await shell.exec("cat", [".vercel/project.json"]);
+        const catResult = await readFile(shell, ".vercel/project.json");
         if (catResult.exit_code !== 0) {
           setProjectStatus({
             status: "not-linked",
@@ -643,7 +669,7 @@ function VercelToolbar() {
           }
           let projectName = projectJson.projectName || null;
           let vercelOrg = projectJson.orgSlug || null;
-          const lsResult = await shell.exec("sh", ["-c", "vercel ls --no-color 2>&1"]).catch(() => null);
+          const lsResult = await execShell(shell, "vercel ls --no-color 2>&1").catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
             const lsOutput = lsResult.stdout;
             const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
@@ -692,7 +718,7 @@ function VercelToolbar() {
   };
   const fetchLatestDeployment = async () => {
     try {
-      const result = await shell.exec("sh", ["-c", "vercel ls --no-color 2>&1"], { timeout: 15e3 });
+      const result = await execShell(shell, "vercel ls --no-color 2>&1", { timeout: 15e3 });
       if (result.exit_code !== 0) return null;
       const lines = result.stdout.split("\n");
       let headerIndex = -1;
@@ -729,6 +755,7 @@ const paths = [
   home + '/Library/Application Support/com.vercel.cli/auth.json',
   home + '/.local/share/com.vercel.cli/auth.json',
   home + '/.config/com.vercel.cli/auth.json',
+  (process.env.APPDATA || home + '/AppData/Roaming') + '/com.vercel.cli/auth.json',
   home + '/.vercel/auth.json'
 ];
 let token = null;
@@ -768,6 +795,7 @@ const paths = [
   home + '/Library/Application Support/com.vercel.cli/auth.json',
   home + '/.local/share/com.vercel.cli/auth.json',
   home + '/.config/com.vercel.cli/auth.json',
+  (process.env.APPDATA || home + '/AppData/Roaming') + '/com.vercel.cli/auth.json',
   home + '/.vercel/auth.json'
 ];
 let token = null;
@@ -810,11 +838,11 @@ https.get({
         onClick: async () => {
           setIsInstalling(true);
           try {
-            const brewResult = await shell.exec("brew", ["install", "vercel-cli"]);
+            const brewResult = IS_WINDOWS ? { exit_code: 1 } : await execTool(shell, "brew", ["install", "vercel-cli"]);
             if (brewResult.exit_code !== 0) {
-              const npmResult = await shell.exec("npm", ["install", "-g", "vercel"]);
+              const npmResult = await execTool(shell, "npm", ["install", "-g", "vercel"]);
               if (npmResult.exit_code !== 0) {
-                throw new Error("Failed to install via brew and npm");
+                throw new Error("Failed to install via npm");
               }
             }
             toast("Vercel CLI installed!", "success");
@@ -847,7 +875,7 @@ https.get({
   const handleDisconnect = async () => {
     setIsDisconnecting(true);
     try {
-      await shell.exec("rm", ["-rf", ".vercel"]);
+      await removePath(shell, ".vercel");
       setProjectStatus({
         status: "not-linked",
         project_name: null,
@@ -868,7 +896,7 @@ https.get({
   const handleSwitchAccount = async () => {
     setIsSwitchingAccount(true);
     try {
-      await shell.exec("vercel", ["logout"]).catch(() => {
+      await execTool(shell, "vercel", ["logout"]).catch(() => {
       });
       setCliStatus({ installed: true, authenticated: false });
       setProjectStatus(null);
@@ -1129,7 +1157,7 @@ https.get({
         if (scope) cmd += ` --scope ${scope}`;
         if (nextCursor) cmd += ` --next ${nextCursor}`;
         cmd += " 2>&1";
-        const result = await shell.exec("sh", ["-c", cmd]);
+        const result = await execShell(shell, cmd);
         if (result.exit_code !== 0) break;
         const lines = result.stdout.split("\n");
         let foundHeader = false;
@@ -1166,12 +1194,12 @@ https.get({
     const match = combined.match(/Linked to\s+(\S+)\/(\S+)/);
     if (!match) return;
     try {
-      const pjResult = await shell.exec("cat", [".vercel/project.json"]);
+      const pjResult = await readFile(shell, ".vercel/project.json");
       if (pjResult.exit_code !== 0) return;
       const pj = JSON.parse(pjResult.stdout);
       pj.orgSlug = match[1];
       pj.projectName = match[2];
-      const whoamiResult = await shell.exec("vercel", ["whoami"]);
+      const whoamiResult = await execTool(shell, "vercel", ["whoami"]);
       if (whoamiResult.exit_code === 0) {
         pj.linkedAccount = whoamiResult.stdout.trim();
       }
@@ -1193,7 +1221,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push("--scope", selectedScope);
       }
-      const linkResult = await shell.exec("vercel", linkArgs, { timeout: 12e4 });
+      const linkResult = await execTool(shell, "vercel", linkArgs, { timeout: 12e4 });
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || "Failed to link project");
       }
@@ -1203,7 +1231,7 @@ https.get({
         if (selectedScope) {
           deployArgs.push("--scope", selectedScope);
         }
-        const deployResult = await shell.exec("vercel", deployArgs, { timeout: 12e4 });
+        const deployResult = await execTool(shell, "vercel", deployArgs, { timeout: 12e4 });
         if (deployResult.exit_code === 0) {
           toast("Deployed to Vercel!", "success");
         } else {
@@ -1230,7 +1258,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push("--scope", selectedScope);
       }
-      const result = await shell.exec("vercel", linkArgs);
+      const result = await execTool(shell, "vercel", linkArgs);
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || "Failed to link project");
       }
@@ -1254,7 +1282,7 @@ https.get({
     setSelectedProjectId("");
     setIsLoadingTeams(true);
     try {
-      const result = await shell.exec("sh", ["-c", "vercel team ls --no-color 2>&1"]);
+      const result = await execShell(shell, "vercel team ls --no-color 2>&1");
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(void 0);

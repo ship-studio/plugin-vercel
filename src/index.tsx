@@ -435,6 +435,70 @@ function getCtx(): PluginContext {
   throw new Error('Plugin context not available');
 }
 
+// ============ Cross-platform shell helpers ============
+// Ship Studio's shell.exec() spawns commands directly without a shell, so on
+// Windows npm/brew-installed CLIs (vercel, npm) — which are .cmd shims — and
+// Unix builtins (sh, cat, rm) fail to resolve. Route those through the OS shell
+// or Node so the plugin behaves the same on Windows as on macOS/Linux.
+
+const IS_WINDOWS =
+  typeof navigator !== 'undefined' &&
+  (/Windows/i.test(navigator.userAgent || '') ||
+    /Win/i.test((navigator as { platform?: string }).platform || ''));
+
+// CLIs installed as .cmd shims (npm/brew global bins) — the shell must resolve
+// these on Windows; spawning the bare name returns ENOENT.
+const WIN_SHIM_TOOLS = new Set(['vercel', 'npm', 'npx', 'brew', 'yarn', 'pnpm']);
+
+type Shell = PluginContext['shell'];
+type ExecOptions = { timeout?: number };
+type ExecResult = { stdout: string; stderr: string; exit_code: number };
+
+// Quote an argument for cmd.exe: wrap when it contains whitespace or cmd
+// metacharacters, doubling any embedded quotes.
+function quoteForCmd(arg: string): string {
+  if (arg === '' || /[\s"&|<>^()%]/.test(arg)) {
+    return '"' + arg.replace(/"/g, '""') + '"';
+  }
+  return arg;
+}
+
+// Direct tool invocation that resolves Windows .cmd shims when needed. Real
+// executables (git, node) are spawned directly on every platform.
+function execTool(
+  shell: Shell,
+  command: string,
+  args: string[],
+  options?: ExecOptions
+): Promise<ExecResult> {
+  if (IS_WINDOWS && WIN_SHIM_TOOLS.has(command)) {
+    const line = [command, ...args].map(quoteForCmd).join(' ');
+    return shell.exec('cmd', ['/c', line], options);
+  }
+  return shell.exec(command, args, options);
+}
+
+// Run a full command-line string through the platform shell (handles pipes and
+// redirects like `2>&1`). cmd.exe on Windows, sh elsewhere.
+function execShell(shell: Shell, cmdLine: string, options?: ExecOptions): Promise<ExecResult> {
+  return IS_WINDOWS
+    ? shell.exec('cmd', ['/c', cmdLine], options)
+    : shell.exec('sh', ['-c', cmdLine], options);
+}
+
+// Read a UTF-8 file via Node (cross-platform replacement for `cat`). exit_code
+// is 1 when the file is missing, matching the previous `cat` behavior.
+function readFile(shell: Shell, path: string, options?: ExecOptions): Promise<ExecResult> {
+  const script = `try{process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))}catch(e){process.exit(1)}`;
+  return shell.exec('node', ['-e', script, path], options);
+}
+
+// Remove a path recursively via Node (cross-platform replacement for `rm -rf`).
+function removePath(shell: Shell, path: string, options?: ExecOptions): Promise<ExecResult> {
+  const script = `require('fs').rmSync(process.argv[1],{recursive:true,force:true})`;
+  return shell.exec('node', ['-e', script, path], options);
+}
+
 // ============ Types ============
 
 interface VercelCliStatus {
@@ -692,7 +756,7 @@ function VercelToolbar() {
       setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
 
       // Check if vercel CLI is installed
-      const versionResult = await shell.exec('vercel', ['--version']);
+      const versionResult = await execTool(shell, 'vercel', ['--version']);
       const installed = versionResult.exit_code === 0;
 
       if (!installed) {
@@ -701,7 +765,7 @@ function VercelToolbar() {
       }
 
       // Check if authenticated
-      const whoamiResult = await shell.exec('vercel', ['whoami']);
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami']);
       const authenticated = whoamiResult.exit_code === 0;
       const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
 
@@ -709,7 +773,7 @@ function VercelToolbar() {
 
       if (authenticated && project?.path) {
         // Read .vercel/project.json to check link status
-        const catResult = await shell.exec('cat', ['.vercel/project.json']);
+        const catResult = await readFile(shell, '.vercel/project.json');
         if (catResult.exit_code !== 0) {
           setProjectStatus({
             status: 'not-linked',
@@ -761,7 +825,7 @@ function VercelToolbar() {
 
           // Get org slug and project name from vercel ls
           // Output may be in stdout, stderr, or both depending on shell proxy
-          const lsResult = await shell.exec('sh', ['-c', 'vercel ls --no-color 2>&1']).catch(() => null);
+          const lsResult = await execShell(shell, 'vercel ls --no-color 2>&1').catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
             const lsOutput = lsResult.stdout;
             const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
@@ -815,7 +879,7 @@ function VercelToolbar() {
 
   const fetchLatestDeployment = async (): Promise<DeploymentInfo | null> => {
     try {
-      const result = await shell.exec('sh', ['-c', 'vercel ls --no-color 2>&1'], { timeout: 15000 });
+      const result = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15000 });
       if (result.exit_code !== 0) return null;
 
       const lines = result.stdout.split('\n');
@@ -866,6 +930,7 @@ const paths = [
   home + '/Library/Application Support/com.vercel.cli/auth.json',
   home + '/.local/share/com.vercel.cli/auth.json',
   home + '/.config/com.vercel.cli/auth.json',
+  (process.env.APPDATA || home + '/AppData/Roaming') + '/com.vercel.cli/auth.json',
   home + '/.vercel/auth.json'
 ];
 let token = null;
@@ -906,6 +971,7 @@ const paths = [
   home + '/Library/Application Support/com.vercel.cli/auth.json',
   home + '/.local/share/com.vercel.cli/auth.json',
   home + '/.config/com.vercel.cli/auth.json',
+  (process.env.APPDATA || home + '/AppData/Roaming') + '/com.vercel.cli/auth.json',
   home + '/.vercel/auth.json'
 ];
 let token = null;
@@ -960,12 +1026,15 @@ https.get({
         onClick={async () => {
           setIsInstalling(true);
           try {
-            // Try brew first, fallback to npm
-            const brewResult = await shell.exec('brew', ['install', 'vercel-cli']);
+            // On macOS/Linux try brew first; fall back to npm. Windows has no
+            // brew, so install via npm directly.
+            const brewResult = IS_WINDOWS
+              ? { exit_code: 1 }
+              : await execTool(shell, 'brew', ['install', 'vercel-cli']);
             if (brewResult.exit_code !== 0) {
-              const npmResult = await shell.exec('npm', ['install', '-g', 'vercel']);
+              const npmResult = await execTool(shell, 'npm', ['install', '-g', 'vercel']);
               if (npmResult.exit_code !== 0) {
-                throw new Error('Failed to install via brew and npm');
+                throw new Error('Failed to install via npm');
               }
             }
             toast('Vercel CLI installed!', 'success');
@@ -1003,7 +1072,7 @@ https.get({
   const handleDisconnect = async () => {
     setIsDisconnecting(true);
     try {
-      await shell.exec('rm', ['-rf', '.vercel']);
+      await removePath(shell, '.vercel');
       setProjectStatus({
         status: 'not-linked',
         project_name: null,
@@ -1025,7 +1094,7 @@ https.get({
   const handleSwitchAccount = async () => {
     setIsSwitchingAccount(true);
     try {
-      await shell.exec('vercel', ['logout']).catch(() => {});
+      await execTool(shell, 'vercel', ['logout']).catch(() => {});
       setCliStatus({ installed: true, authenticated: false });
       setProjectStatus(null);
       // Open the interactive terminal for login
@@ -1294,7 +1363,7 @@ https.get({
         if (nextCursor) cmd += ` --next ${nextCursor}`;
         cmd += ' 2>&1';
 
-        const result = await shell.exec('sh', ['-c', cmd]);
+        const result = await execShell(shell, cmd);
         if (result.exit_code !== 0) break;
 
         const lines = result.stdout.split('\n');
@@ -1342,13 +1411,13 @@ https.get({
     const match = combined.match(/Linked to\s+(\S+)\/(\S+)/);
     if (!match) return;
     try {
-      const pjResult = await shell.exec('cat', ['.vercel/project.json']);
+      const pjResult = await readFile(shell, '.vercel/project.json');
       if (pjResult.exit_code !== 0) return;
       const pj = JSON.parse(pjResult.stdout);
       pj.orgSlug = match[1];
       pj.projectName = match[2];
       // Store current account for mismatch detection
-      const whoamiResult = await shell.exec('vercel', ['whoami']);
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami']);
       if (whoamiResult.exit_code === 0) {
         pj.linkedAccount = whoamiResult.stdout.trim();
       }
@@ -1373,7 +1442,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push('--scope', selectedScope);
       }
-      const linkResult = await shell.exec('vercel', linkArgs, { timeout: 120_000 });
+      const linkResult = await execTool(shell, 'vercel', linkArgs, { timeout: 120_000 });
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
@@ -1386,7 +1455,7 @@ https.get({
         if (selectedScope) {
           deployArgs.push('--scope', selectedScope);
         }
-        const deployResult = await shell.exec('vercel', deployArgs, { timeout: 120_000 });
+        const deployResult = await execTool(shell, 'vercel', deployArgs, { timeout: 120_000 });
         if (deployResult.exit_code === 0) {
           toast('Deployed to Vercel!', 'success');
         } else {
@@ -1417,7 +1486,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push('--scope', selectedScope);
       }
-      const result = await shell.exec('vercel', linkArgs);
+      const result = await execTool(shell, 'vercel', linkArgs);
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || 'Failed to link project');
       }
@@ -1450,7 +1519,7 @@ https.get({
       //   id                           Team name
       // ✔ julianmemberstacks-projects  julianmemberstack's projects
       //   memberstack-team             Memberstack Team
-      const result = await shell.exec('sh', ['-c', 'vercel team ls --no-color 2>&1']);
+      const result = await execShell(shell, 'vercel team ls --no-color 2>&1');
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(undefined);
