@@ -689,7 +689,7 @@ function VercelToolbar() {
             });
             return;
           }
-          const domains = await fetchProjectDomains(projectId);
+          const domains = await fetchProjectDomains(projectId, orgId);
           const productionUrl = domains.length > 0 ? domains[0] : null;
           setProjectStatus({
             status: "connected",
@@ -786,7 +786,7 @@ https.get({
       return {};
     }
   };
-  const fetchProjectDomains = async (projectId) => {
+  const fetchProjectDomains = async (projectId, teamId) => {
     try {
       const script = `
 const fs = require('fs'), os = require('os'), https = require('https');
@@ -805,7 +805,8 @@ for (const p of paths) {
 if (!token) { console.log('[]'); process.exit(0); }
 https.get({
   hostname: 'api.vercel.com',
-  path: '/v9/projects/' + encodeURIComponent(process.argv[1]) + '/domains',
+  path: '/v9/projects/' + encodeURIComponent(process.argv[1]) + '/domains?limit=100'
+    + (process.argv[2] ? '&teamId=' + encodeURIComponent(process.argv[2]) : ''),
   headers: { Authorization: 'Bearer ' + token }
 }, (res) => {
   let d = '';
@@ -813,11 +814,17 @@ https.get({
   res.on('end', () => {
     try {
       const p = JSON.parse(d);
-      console.log(JSON.stringify((p.domains || []).filter(x => !x.gitBranch).map(x => x.name)));
+      // Production domains only (no branch aliases, no redirect-only domains),
+      // custom domains sorted before the default *.vercel.app one
+      const names = (p.domains || [])
+        .filter(x => !x.gitBranch && !x.redirect)
+        .map(x => x.name)
+        .sort((a, b) => (a.endsWith('.vercel.app') ? 1 : 0) - (b.endsWith('.vercel.app') ? 1 : 0));
+      console.log(JSON.stringify(names));
     } catch { console.log('[]'); }
   });
 }).on('error', () => console.log('[]'));`;
-      const result = await shell.exec("node", ["-e", script, projectId], { timeout: 1e4 });
+      const result = await shell.exec("node", ["-e", script, projectId, teamId || ""], { timeout: 1e4 });
       if (result.exit_code !== 0) return [];
       return JSON.parse(result.stdout.trim());
     } catch {
