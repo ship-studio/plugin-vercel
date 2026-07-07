@@ -1,5 +1,5 @@
-import { jsx, jsxs, Fragment } from "data:text/javascript,const R=window.__SHIPSTUDIO_REACT__;export const jsx=R.createElement;export const jsxs=R.createElement;export const Fragment=R.Fragment;";
 import { useState, useRef, useEffect } from "data:text/javascript,export default window.__SHIPSTUDIO_REACT__;export const useState=window.__SHIPSTUDIO_REACT__.useState;export const useEffect=window.__SHIPSTUDIO_REACT__.useEffect;export const useRef=window.__SHIPSTUDIO_REACT__.useRef;export const useCallback=window.__SHIPSTUDIO_REACT__.useCallback;export const useMemo=window.__SHIPSTUDIO_REACT__.useMemo;export const createElement=window.__SHIPSTUDIO_REACT__.createElement;";
+const ShipReact = window.__SHIPSTUDIO_REACT__;
 const VERCEL_CSS = `
 /* Vercel Integration - Workspace Header */
 /* Extends host .toolbar-icon-btn class for base button styling */
@@ -735,7 +735,7 @@ function VercelToolbar() {
         const statusMatch = line.match(/●\s*(Ready|Building|Error|Queued|Canceled|Initializing)/i);
         if (!statusMatch) continue;
         const statusText = statusMatch[1].toUpperCase();
-        const urlMatch = line.match(/(\S+\.vercel\.app)/);
+        const urlMatch = line.match(/(?:https?:\/\/)?([^\s/]+\.vercel\.app)/);
         const url = urlMatch ? urlMatch[1] : "";
         const ageMatch = line.match(/^\s*(\S+)/);
         const age = ageMatch ? ageMatch[1] : "";
@@ -825,13 +825,13 @@ https.get({
     }
   };
   if (!cliStatus || !project) {
-    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+    return /* @__PURE__ */ ShipReact.createElement("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Vercel" }, /* @__PURE__ */ ShipReact.createElement(VercelIcon, null));
   }
   if (!hasGitRemote && (projectStatus == null ? void 0 : projectStatus.status) !== "connected") {
-    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Push to GitHub to enable Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+    return /* @__PURE__ */ ShipReact.createElement("button", { className: "toolbar-icon-btn vercel-button", disabled: true, title: "Push to GitHub to enable Vercel" }, /* @__PURE__ */ ShipReact.createElement(VercelIcon, null));
   }
   if (!cliStatus.installed) {
-    return /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ ShipReact.createElement(
       "button",
       {
         className: "toolbar-icon-btn vercel-button vercel-install",
@@ -854,12 +854,10 @@ https.get({
           }
         },
         disabled: isInstalling,
-        title: "Install Vercel CLI via npm",
-        children: [
-          /* @__PURE__ */ jsx(VercelIcon, {}),
-          isInstalling ? "Installing..." : "Install Vercel"
-        ]
-      }
+        title: "Install Vercel CLI via npm"
+      },
+      /* @__PURE__ */ ShipReact.createElement(VercelIcon, null),
+      isInstalling ? "Installing..." : "Install Vercel"
     );
   }
   const handleLogin = async () => {
@@ -908,88 +906,64 @@ https.get({
     }
   };
   if (!cliStatus.authenticated) {
-    return /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ ShipReact.createElement(
       "button",
       {
         className: "toolbar-icon-btn vercel-button vercel-connect",
         title: "Connect your Vercel account",
         onClick: () => void handleLogin(),
-        disabled: isLoggingIn,
-        children: [
-          /* @__PURE__ */ jsx(VercelIcon, {}),
-          isLoggingIn ? "Connecting..." : "Connect Vercel"
-        ]
-      }
+        disabled: isLoggingIn
+      },
+      /* @__PURE__ */ ShipReact.createElement(VercelIcon, null),
+      isLoggingIn ? "Connecting..." : "Connect Vercel"
     );
   }
   if (isDeploying) {
-    return /* @__PURE__ */ jsxs("button", { className: "toolbar-icon-btn vercel-button vercel-deploying", disabled: true, title: "Deploying to Vercel...", children: [
-      /* @__PURE__ */ jsx(VercelIcon, {}),
-      /* @__PURE__ */ jsx("span", { className: "deploying-text", children: "Deploying..." })
-    ] });
+    return /* @__PURE__ */ ShipReact.createElement("button", { className: "toolbar-icon-btn vercel-button vercel-deploying", disabled: true, title: "Deploying to Vercel..." }, /* @__PURE__ */ ShipReact.createElement(VercelIcon, null), /* @__PURE__ */ ShipReact.createElement("span", { className: "deploying-text" }, "Deploying..."));
   }
   if ((projectStatus == null ? void 0 : projectStatus.status) === "account-mismatch") {
     const actionInProgress = isDisconnecting || isSwitchingAccount;
-    return /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ ShipReact.createElement(
       "div",
       {
         className: "vercel-button-container",
         onMouseEnter: () => setShowSiteDropdown(true),
-        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false),
-        children: [
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              className: "toolbar-icon-btn vercel-button vercel-mismatch",
-              title: "Account mismatch",
-              onClick: () => setShowSiteDropdown((v) => !v),
-              children: /* @__PURE__ */ jsx(VercelIcon, {})
-            }
-          ),
-          showSiteDropdown && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
-            /* @__PURE__ */ jsx("div", { className: "vercel-mismatch-text", children: projectStatus.linked_account ? /* @__PURE__ */ jsxs(Fragment, { children: [
-              "This project is linked to ",
-              /* @__PURE__ */ jsx("strong", { children: projectStatus.linked_account }),
-              " but you're signed in as ",
-              /* @__PURE__ */ jsx("strong", { children: projectStatus.current_account })
-            ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-              "This project was linked to a different account than ",
-              /* @__PURE__ */ jsx("strong", { children: projectStatus.current_account })
-            ] }) }),
-            /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                className: "vercel-dropdown-action",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  void handleSwitchAccount();
-                },
-                disabled: isSwitchingAccount,
-                children: [
-                  /* @__PURE__ */ jsx(SwitchIcon, {}),
-                  isSwitchingAccount ? "Switching..." : "Switch Account"
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                className: "vercel-dropdown-action vercel-action-danger",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  void handleDisconnect();
-                },
-                disabled: isDisconnecting,
-                children: [
-                  /* @__PURE__ */ jsx(DisconnectIcon, {}),
-                  isDisconnecting ? "Disconnecting..." : "Disconnect Project"
-                ]
-              }
-            )
-          ] }) })
-        ]
-      }
+        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false)
+      },
+      /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "toolbar-icon-btn vercel-button vercel-mismatch",
+          title: "Account mismatch",
+          onClick: () => setShowSiteDropdown((v) => !v)
+        },
+        /* @__PURE__ */ ShipReact.createElement(VercelIcon, null)
+      ),
+      showSiteDropdown && /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-site-dropdown" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-site-dropdown-inner" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-mismatch-text" }, projectStatus.linked_account ? /* @__PURE__ */ ShipReact.createElement(ShipReact.Fragment, null, "This project is linked to ", /* @__PURE__ */ ShipReact.createElement("strong", null, projectStatus.linked_account), " but you're signed in as ", /* @__PURE__ */ ShipReact.createElement("strong", null, projectStatus.current_account)) : /* @__PURE__ */ ShipReact.createElement(ShipReact.Fragment, null, "This project was linked to a different account than ", /* @__PURE__ */ ShipReact.createElement("strong", null, projectStatus.current_account))), /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-dropdown-separator" }), /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action",
+          onClick: (e) => {
+            e.stopPropagation();
+            void handleSwitchAccount();
+          },
+          disabled: isSwitchingAccount
+        },
+        /* @__PURE__ */ ShipReact.createElement(SwitchIcon, null),
+        isSwitchingAccount ? "Switching..." : "Switch Account"
+      ), /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action vercel-action-danger",
+          onClick: (e) => {
+            e.stopPropagation();
+            void handleDisconnect();
+          },
+          disabled: isDisconnecting
+        },
+        /* @__PURE__ */ ShipReact.createElement(DisconnectIcon, null),
+        isDisconnecting ? "Disconnecting..." : "Disconnect Project"
+      )))
     );
   }
   if ((projectStatus == null ? void 0 : projectStatus.status) === "connected") {
@@ -997,152 +971,112 @@ https.get({
     const productionUrl = projectStatus.production_url;
     const branch = project.currentBranch || "main";
     const isMainBranch = branch === "main" || branch === "master";
-    const previewUrl = !isMainBranch && projectStatus.project_name ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}.vercel.app` : null;
+    const previewUrl = !isMainBranch && projectStatus.project_name && projectStatus.vercel_org ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}-${projectStatus.vercel_org}.vercel.app` : null;
     const actionInProgress = isDisconnecting || isSwitchingAccount;
-    return /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ ShipReact.createElement(
       "div",
       {
         className: "vercel-button-container",
         onMouseEnter: () => setShowSiteDropdown(true),
-        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false),
-        children: [
-          /* @__PURE__ */ jsxs(
-            "button",
-            {
-              className: `toolbar-icon-btn vercel-button vercel-linked${(latestDeployment == null ? void 0 : latestDeployment.status) === "ERROR" ? " vercel-status-error" : ""}${(latestDeployment == null ? void 0 : latestDeployment.status) === "BUILDING" || (latestDeployment == null ? void 0 : latestDeployment.status) === "QUEUED" || (latestDeployment == null ? void 0 : latestDeployment.status) === "INITIALIZING" ? " vercel-status-building" : ""}`,
-              onClick: () => setShowSiteDropdown((v) => !v),
-              title: "Vercel deployment status",
-              children: [
-                /* @__PURE__ */ jsx(VercelIcon, {}),
-                latestDeployment && /* @__PURE__ */ jsx(StatusDot, { status: latestDeployment.status })
-              ]
-            }
-          ),
-          showSiteDropdown && /* @__PURE__ */ jsx("div", { className: "vercel-site-dropdown", children: /* @__PURE__ */ jsxs("div", { className: "vercel-site-dropdown-inner", children: [
-            latestDeployment && /* @__PURE__ */ jsxs(Fragment, { children: [
-              /* @__PURE__ */ jsxs("div", { className: "vercel-deploy-status", children: [
-                /* @__PURE__ */ jsxs("div", { className: "vercel-deploy-status-row", children: [
-                  /* @__PURE__ */ jsx("span", { className: `vercel-deploy-indicator vercel-deploy-indicator-${latestDeployment.status.toLowerCase()}` }),
-                  /* @__PURE__ */ jsx("span", { children: deployStatusLabel(latestDeployment.status) })
-                ] }),
-                displayAge && /* @__PURE__ */ jsx("span", { className: "vercel-deploy-age", children: displayAge })
-              ] }),
-              latestDeployment.status === "ERROR" && /* @__PURE__ */ jsxs(
-                "button",
-                {
-                  className: "vercel-dropdown-action vercel-deploy-error-link",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    openUrl(`https://vercel.com/${projectStatus.vercel_org}/${projectStatus.project_name}/deployments`);
-                  },
-                  children: [
-                    /* @__PURE__ */ jsx(ExternalLinkIcon, {}),
-                    "View build logs"
-                  ]
-                }
-              ),
-              /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" })
-            ] }),
-            productionUrl && /* @__PURE__ */ jsxs(
-              "button",
-              {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  openUrl(`https://${productionUrl}`);
-                },
-                children: [
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-prod", children: "Prod" }),
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-url", children: productionUrl }),
-                  /* @__PURE__ */ jsx(ExternalLinkIcon, {})
-                ]
-              }
-            ),
-            previewUrl && /* @__PURE__ */ jsxs(
-              "button",
-              {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  openUrl(`https://${previewUrl}`);
-                },
-                children: [
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-preview", children: "Preview" }),
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-url", children: previewUrl }),
-                  /* @__PURE__ */ jsx(ExternalLinkIcon, {})
-                ]
-              }
-            ),
-            (latestDeployment == null ? void 0 : latestDeployment.url) && /* @__PURE__ */ jsxs(
-              "button",
-              {
-                onClick: (e) => {
-                  e.stopPropagation();
-                  openUrl(`https://${latestDeployment.url}`);
-                },
-                children: [
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-badge vercel-site-badge-deploy", children: "Deploy" }),
-                  /* @__PURE__ */ jsx("span", { className: "vercel-site-url", children: latestDeployment.url }),
-                  /* @__PURE__ */ jsx(ExternalLinkIcon, {})
-                ]
-              }
-            ),
-            (productionUrl || previewUrl || (latestDeployment == null ? void 0 : latestDeployment.url)) && /* @__PURE__ */ jsx("div", { className: "vercel-dropdown-separator" }),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                className: "vercel-dropdown-action",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  openUrl(dashboardUrl);
-                },
-                children: [
-                  /* @__PURE__ */ jsx(ExternalLinkIcon, {}),
-                  "View Dashboard"
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                className: "vercel-dropdown-action",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  void handleSwitchAccount();
-                },
-                disabled: isSwitchingAccount,
-                children: [
-                  /* @__PURE__ */ jsx(SwitchIcon, {}),
-                  isSwitchingAccount ? "Switching..." : "Switch Account"
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                className: "vercel-dropdown-action vercel-action-danger",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  void handleDisconnect();
-                },
-                disabled: isDisconnecting,
-                children: [
-                  /* @__PURE__ */ jsx(DisconnectIcon, {}),
-                  isDisconnecting ? "Disconnecting..." : "Disconnect Project"
-                ]
-              }
-            )
-          ] }) })
-        ]
-      }
+        onMouseLeave: () => !actionInProgress && setShowSiteDropdown(false)
+      },
+      /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: `toolbar-icon-btn vercel-button vercel-linked${(latestDeployment == null ? void 0 : latestDeployment.status) === "ERROR" ? " vercel-status-error" : ""}${(latestDeployment == null ? void 0 : latestDeployment.status) === "BUILDING" || (latestDeployment == null ? void 0 : latestDeployment.status) === "QUEUED" || (latestDeployment == null ? void 0 : latestDeployment.status) === "INITIALIZING" ? " vercel-status-building" : ""}`,
+          onClick: () => setShowSiteDropdown((v) => !v),
+          title: "Vercel deployment status"
+        },
+        /* @__PURE__ */ ShipReact.createElement(VercelIcon, null),
+        latestDeployment && /* @__PURE__ */ ShipReact.createElement(StatusDot, { status: latestDeployment.status })
+      ),
+      showSiteDropdown && /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-site-dropdown" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-site-dropdown-inner" }, latestDeployment && /* @__PURE__ */ ShipReact.createElement(ShipReact.Fragment, null, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-deploy-status" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-deploy-status-row" }, /* @__PURE__ */ ShipReact.createElement("span", { className: `vercel-deploy-indicator vercel-deploy-indicator-${latestDeployment.status.toLowerCase()}` }), /* @__PURE__ */ ShipReact.createElement("span", null, deployStatusLabel(latestDeployment.status))), displayAge && /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-deploy-age" }, displayAge)), latestDeployment.status === "ERROR" && /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action vercel-deploy-error-link",
+          onClick: (e) => {
+            e.stopPropagation();
+            openUrl(`https://vercel.com/${projectStatus.vercel_org}/${projectStatus.project_name}/deployments`);
+          }
+        },
+        /* @__PURE__ */ ShipReact.createElement(ExternalLinkIcon, null),
+        "View build logs"
+      ), /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-dropdown-separator" })), productionUrl && /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          onClick: (e) => {
+            e.stopPropagation();
+            openUrl(`https://${productionUrl}`);
+          }
+        },
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-badge vercel-site-badge-prod" }, "Prod"),
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-url" }, productionUrl),
+        /* @__PURE__ */ ShipReact.createElement(ExternalLinkIcon, null)
+      ), previewUrl && /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          onClick: (e) => {
+            e.stopPropagation();
+            openUrl(`https://${previewUrl}`);
+          }
+        },
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-badge vercel-site-badge-preview" }, "Preview"),
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-url" }, previewUrl),
+        /* @__PURE__ */ ShipReact.createElement(ExternalLinkIcon, null)
+      ), (latestDeployment == null ? void 0 : latestDeployment.url) && /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          onClick: (e) => {
+            e.stopPropagation();
+            openUrl(`https://${latestDeployment.url}`);
+          }
+        },
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-badge vercel-site-badge-deploy" }, "Deploy"),
+        /* @__PURE__ */ ShipReact.createElement("span", { className: "vercel-site-url" }, latestDeployment.url),
+        /* @__PURE__ */ ShipReact.createElement(ExternalLinkIcon, null)
+      ), (productionUrl || previewUrl || (latestDeployment == null ? void 0 : latestDeployment.url)) && /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-dropdown-separator" }), /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action",
+          onClick: (e) => {
+            e.stopPropagation();
+            openUrl(dashboardUrl);
+          }
+        },
+        /* @__PURE__ */ ShipReact.createElement(ExternalLinkIcon, null),
+        "View Dashboard"
+      ), /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action",
+          onClick: (e) => {
+            e.stopPropagation();
+            void handleSwitchAccount();
+          },
+          disabled: isSwitchingAccount
+        },
+        /* @__PURE__ */ ShipReact.createElement(SwitchIcon, null),
+        isSwitchingAccount ? "Switching..." : "Switch Account"
+      ), /* @__PURE__ */ ShipReact.createElement(
+        "button",
+        {
+          className: "vercel-dropdown-action vercel-action-danger",
+          onClick: (e) => {
+            e.stopPropagation();
+            void handleDisconnect();
+          },
+          disabled: isDisconnecting
+        },
+        /* @__PURE__ */ ShipReact.createElement(DisconnectIcon, null),
+        isDisconnecting ? "Disconnecting..." : "Disconnect Project"
+      )))
     );
   }
   if (projectStatus === null) {
-    return /* @__PURE__ */ jsxs("button", { className: "toolbar-icon-btn vercel-button vercel-checking", disabled: true, title: "Checking Vercel status...", children: [
-      /* @__PURE__ */ jsx(VercelIcon, {}),
-      /* @__PURE__ */ jsx("span", { className: "checking-text", children: "Connecting..." })
-    ] });
+    return /* @__PURE__ */ ShipReact.createElement("button", { className: "toolbar-icon-btn vercel-button vercel-checking", disabled: true, title: "Checking Vercel status..." }, /* @__PURE__ */ ShipReact.createElement(VercelIcon, null), /* @__PURE__ */ ShipReact.createElement("span", { className: "checking-text" }, "Connecting..."));
   }
   if (optimisticLinked) {
-    return /* @__PURE__ */ jsx("button", { className: "toolbar-icon-btn vercel-button vercel-linked", disabled: true, title: "Connected to Vercel", children: /* @__PURE__ */ jsx(VercelIcon, {}) });
+    return /* @__PURE__ */ ShipReact.createElement("button", { className: "toolbar-icon-btn vercel-button vercel-linked", disabled: true, title: "Connected to Vercel" }, /* @__PURE__ */ ShipReact.createElement(VercelIcon, null));
   }
   const loadExistingProjects = async (scope) => {
     var _a;
@@ -1274,6 +1208,7 @@ https.get({
     }
   };
   const handleOpenDeployModal = async () => {
+    var _a;
     setDeployName(project.name);
     setShowDeployModal(true);
     setError(null);
@@ -1314,7 +1249,7 @@ https.get({
       const resolvedTeams = fetchedTeams.map((t) => ({ ...t, id: idMap[t.id] || t.id }));
       setTeams(resolvedTeams);
       const currentTeam = resolvedTeams.find((t) => t.is_current);
-      setSelectedScope(currentTeam ? currentTeam.id : void 0);
+      setSelectedScope(currentTeam ? currentTeam.id : (_a = resolvedTeams[0]) == null ? void 0 : _a.id);
     } catch {
       setTeams([]);
       setSelectedScope(void 0);
@@ -1322,143 +1257,102 @@ https.get({
       setIsLoadingTeams(false);
     }
   };
-  return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ ShipReact.createElement(ShipReact.Fragment, null, /* @__PURE__ */ ShipReact.createElement(
+    "button",
+    {
+      className: "toolbar-icon-btn vercel-button vercel-setup",
+      onClick: () => void handleOpenDeployModal(),
+      title: "Connect to Vercel for auto-deployments"
+    },
+    /* @__PURE__ */ ShipReact.createElement(VercelIcon, null),
+    "Connect Vercel"
+  ), showDeployModal && /* @__PURE__ */ ShipReact.createElement(
+    "div",
+    {
+      className: "modal-overlay",
+      onClick: () => {
+        if (!isDeploying) setShowDeployModal(false);
+      }
+    },
+    /* @__PURE__ */ ShipReact.createElement("div", { className: "modal vercel-modal", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ ShipReact.createElement("h3", null, "Connect to Vercel"), /* @__PURE__ */ ShipReact.createElement("p", null, "Link this project to Vercel for automatic deployments when you publish."), /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-link-mode-toggle" }, /* @__PURE__ */ ShipReact.createElement(
       "button",
       {
-        className: "toolbar-icon-btn vercel-button vercel-setup",
-        onClick: () => void handleOpenDeployModal(),
-        title: "Connect to Vercel for auto-deployments",
-        children: [
-          /* @__PURE__ */ jsx(VercelIcon, {}),
-          "Connect Vercel"
-        ]
-      }
-    ),
-    showDeployModal && /* @__PURE__ */ jsx(
-      "div",
+        className: linkMode === "new" ? "active" : "",
+        onClick: () => setLinkMode("new")
+      },
+      "Create new project"
+    ), /* @__PURE__ */ ShipReact.createElement(
+      "button",
       {
-        className: "modal-overlay",
+        className: linkMode === "existing" ? "active" : "",
         onClick: () => {
-          if (!isDeploying) setShowDeployModal(false);
-        },
-        children: /* @__PURE__ */ jsxs("div", { className: "modal vercel-modal", onClick: (e) => e.stopPropagation(), children: [
-          /* @__PURE__ */ jsx("h3", { children: "Connect to Vercel" }),
-          /* @__PURE__ */ jsx("p", { children: "Link this project to Vercel for automatic deployments when you publish." }),
-          /* @__PURE__ */ jsxs("div", { className: "vercel-link-mode-toggle", children: [
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                className: linkMode === "new" ? "active" : "",
-                onClick: () => setLinkMode("new"),
-                children: "Create new project"
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              "button",
-              {
-                className: linkMode === "existing" ? "active" : "",
-                onClick: () => {
-                  setLinkMode("existing");
-                  if (existingProjects.length === 0) {
-                    void loadExistingProjects(selectedScope);
-                  }
-                },
-                children: "Link existing project"
-              }
-            )
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "vercel-form", children: [
-            isLoadingTeams ? /* @__PURE__ */ jsxs("div", { className: "vercel-form-loading", children: [
-              /* @__PURE__ */ jsx("div", { className: "vercel-form-spinner" }),
-              /* @__PURE__ */ jsx("span", { children: "Loading teams..." })
-            ] }) : teams.length > 0 && /* @__PURE__ */ jsxs("label", { children: [
-              "Team",
-              /* @__PURE__ */ jsxs(
-                "select",
-                {
-                  className: "owner-select",
-                  value: selectedScope || "",
-                  onChange: (e) => {
-                    const newScope = e.target.value || void 0;
-                    setSelectedScope(newScope);
-                    if (linkMode === "existing") {
-                      void loadExistingProjects(newScope);
-                    }
-                  },
-                  children: [
-                    /* @__PURE__ */ jsx("option", { value: "", children: "Personal Account" }),
-                    teams.map((team) => /* @__PURE__ */ jsx("option", { value: team.id, children: team.name }, team.id))
-                  ]
-                }
-              )
-            ] }),
-            linkMode === "new" ? /* @__PURE__ */ jsxs("label", { children: [
-              "Vercel project name",
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "text",
-                  value: deployName,
-                  onChange: (e) => setDeployName(e.target.value.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase()),
-                  placeholder: "my-project",
-                  autoFocus: true,
-                  autoComplete: "off",
-                  autoCorrect: "off",
-                  autoCapitalize: "off",
-                  spellCheck: false
-                }
-              )
-            ] }) : /* @__PURE__ */ jsx(Fragment, { children: isLoadingProjects ? /* @__PURE__ */ jsxs("div", { className: "vercel-form-loading", children: [
-              /* @__PURE__ */ jsx("div", { className: "vercel-form-spinner" }),
-              /* @__PURE__ */ jsx("span", { children: "Loading projects..." })
-            ] }) : existingProjects.length === 0 ? /* @__PURE__ */ jsx("div", { className: "vercel-form-empty", children: "No projects found for this scope" }) : /* @__PURE__ */ jsxs("label", { children: [
-              "Select project",
-              /* @__PURE__ */ jsxs(
-                "select",
-                {
-                  className: "owner-select",
-                  value: selectedProjectId,
-                  onChange: (e) => setSelectedProjectId(e.target.value),
-                  children: [
-                    /* @__PURE__ */ jsx("option", { value: "", children: "Choose a project..." }),
-                    existingProjects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
-                  ]
-                }
-              )
-            ] }) }),
-            error && /* @__PURE__ */ jsx("p", { className: "vercel-error", children: error })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "modal-actions", children: [
-            /* @__PURE__ */ jsx("button", { onClick: () => setShowDeployModal(false), disabled: isDeploying || isLinking, children: "Cancel" }),
-            linkMode === "new" ? /* @__PURE__ */ jsx(
-              "button",
-              {
-                className: "btn-primary",
-                onClick: () => void handleDeploy(),
-                disabled: isDeploying || !deployName.trim(),
-                children: isDeploying ? "Connecting..." : "Connect & Deploy"
-              }
-            ) : /* @__PURE__ */ jsx(
-              "button",
-              {
-                className: "btn-primary",
-                onClick: () => void handleLinkExisting(),
-                disabled: isLinking || !selectedProjectId,
-                children: isLinking ? "Linking..." : "Link Project"
-              }
-            )
-          ] })
-        ] })
+          setLinkMode("existing");
+          if (existingProjects.length === 0) {
+            void loadExistingProjects(selectedScope);
+          }
+        }
+      },
+      "Link existing project"
+    )), /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form" }, isLoadingTeams ? /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form-loading" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form-spinner" }), /* @__PURE__ */ ShipReact.createElement("span", null, "Loading teams...")) : teams.length > 0 && /* @__PURE__ */ ShipReact.createElement("label", null, "Team", /* @__PURE__ */ ShipReact.createElement(
+      "select",
+      {
+        className: "owner-select",
+        value: selectedScope || "",
+        onChange: (e) => {
+          const newScope = e.target.value || void 0;
+          setSelectedScope(newScope);
+          if (linkMode === "existing") {
+            void loadExistingProjects(newScope);
+          }
+        }
+      },
+      teams.map((team) => /* @__PURE__ */ ShipReact.createElement("option", { key: team.id, value: team.id }, team.name))
+    )), linkMode === "new" ? /* @__PURE__ */ ShipReact.createElement("label", null, "Vercel project name", /* @__PURE__ */ ShipReact.createElement(
+      "input",
+      {
+        type: "text",
+        value: deployName,
+        onChange: (e) => setDeployName(e.target.value.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase()),
+        placeholder: "my-project",
+        autoFocus: true,
+        autoComplete: "off",
+        autoCorrect: "off",
+        autoCapitalize: "off",
+        spellCheck: false
       }
-    )
-  ] });
+    )) : /* @__PURE__ */ ShipReact.createElement(ShipReact.Fragment, null, isLoadingProjects ? /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form-loading" }, /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form-spinner" }), /* @__PURE__ */ ShipReact.createElement("span", null, "Loading projects...")) : existingProjects.length === 0 ? /* @__PURE__ */ ShipReact.createElement("div", { className: "vercel-form-empty" }, "No projects found for this scope") : /* @__PURE__ */ ShipReact.createElement("label", null, "Select project", /* @__PURE__ */ ShipReact.createElement(
+      "select",
+      {
+        className: "owner-select",
+        value: selectedProjectId,
+        onChange: (e) => setSelectedProjectId(e.target.value)
+      },
+      /* @__PURE__ */ ShipReact.createElement("option", { value: "" }, "Choose a project..."),
+      existingProjects.map((p) => /* @__PURE__ */ ShipReact.createElement("option", { key: p.id, value: p.id }, p.name))
+    ))), error && /* @__PURE__ */ ShipReact.createElement("p", { className: "vercel-error" }, error)), /* @__PURE__ */ ShipReact.createElement("div", { className: "modal-actions" }, /* @__PURE__ */ ShipReact.createElement("button", { onClick: () => setShowDeployModal(false), disabled: isDeploying || isLinking }, "Cancel"), linkMode === "new" ? /* @__PURE__ */ ShipReact.createElement(
+      "button",
+      {
+        className: "btn-primary",
+        onClick: () => void handleDeploy(),
+        disabled: isDeploying || !deployName.trim()
+      },
+      isDeploying ? "Connecting..." : "Connect & Deploy"
+    ) : /* @__PURE__ */ ShipReact.createElement(
+      "button",
+      {
+        className: "btn-primary",
+        onClick: () => void handleLinkExisting(),
+        disabled: isLinking || !selectedProjectId
+      },
+      isLinking ? "Linking..." : "Link Project"
+    )))
+  ));
 }
 function VercelIcon() {
-  return /* @__PURE__ */ jsx("svg", { width: "14", height: "14", viewBox: "0 0 116 100", fill: "currentColor", children: /* @__PURE__ */ jsx("path", { d: "M57.5 0L115 100H0L57.5 0Z" }) });
+  return /* @__PURE__ */ ShipReact.createElement("svg", { width: "14", height: "14", viewBox: "0 0 116 100", fill: "currentColor" }, /* @__PURE__ */ ShipReact.createElement("path", { d: "M57.5 0L115 100H0L57.5 0Z" }));
 }
 function ExternalLinkIcon() {
-  return /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ ShipReact.createElement(
     "svg",
     {
       width: "12",
@@ -1466,17 +1360,15 @@ function ExternalLinkIcon() {
       viewBox: "0 0 24 24",
       fill: "none",
       stroke: "currentColor",
-      strokeWidth: "2",
-      children: [
-        /* @__PURE__ */ jsx("path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }),
-        /* @__PURE__ */ jsx("polyline", { points: "15 3 21 3 21 9" }),
-        /* @__PURE__ */ jsx("line", { x1: "10", y1: "14", x2: "21", y2: "3" })
-      ]
-    }
+      strokeWidth: "2"
+    },
+    /* @__PURE__ */ ShipReact.createElement("path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }),
+    /* @__PURE__ */ ShipReact.createElement("polyline", { points: "15 3 21 3 21 9" }),
+    /* @__PURE__ */ ShipReact.createElement("line", { x1: "10", y1: "14", x2: "21", y2: "3" })
   );
 }
 function SwitchIcon() {
-  return /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ ShipReact.createElement(
     "svg",
     {
       width: "12",
@@ -1484,18 +1376,16 @@ function SwitchIcon() {
       viewBox: "0 0 24 24",
       fill: "none",
       stroke: "currentColor",
-      strokeWidth: "2",
-      children: [
-        /* @__PURE__ */ jsx("polyline", { points: "17 1 21 5 17 9" }),
-        /* @__PURE__ */ jsx("path", { d: "M3 11V9a4 4 0 0 1 4-4h14" }),
-        /* @__PURE__ */ jsx("polyline", { points: "7 23 3 19 7 15" }),
-        /* @__PURE__ */ jsx("path", { d: "M21 13v2a4 4 0 0 1-4 4H3" })
-      ]
-    }
+      strokeWidth: "2"
+    },
+    /* @__PURE__ */ ShipReact.createElement("polyline", { points: "17 1 21 5 17 9" }),
+    /* @__PURE__ */ ShipReact.createElement("path", { d: "M3 11V9a4 4 0 0 1 4-4h14" }),
+    /* @__PURE__ */ ShipReact.createElement("polyline", { points: "7 23 3 19 7 15" }),
+    /* @__PURE__ */ ShipReact.createElement("path", { d: "M21 13v2a4 4 0 0 1-4 4H3" })
   );
 }
 function DisconnectIcon() {
-  return /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ ShipReact.createElement(
     "svg",
     {
       width: "12",
@@ -1503,12 +1393,10 @@ function DisconnectIcon() {
       viewBox: "0 0 24 24",
       fill: "none",
       stroke: "currentColor",
-      strokeWidth: "2",
-      children: [
-        /* @__PURE__ */ jsx("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
-        /* @__PURE__ */ jsx("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
-      ]
-    }
+      strokeWidth: "2"
+    },
+    /* @__PURE__ */ ShipReact.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }),
+    /* @__PURE__ */ ShipReact.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" })
   );
 }
 function StatusDot({ status }) {
@@ -1520,7 +1408,7 @@ function StatusDot({ status }) {
   } else if (status === "READY") {
     className += " vercel-status-dot-ready";
   }
-  return /* @__PURE__ */ jsx("span", { className });
+  return /* @__PURE__ */ ShipReact.createElement("span", { className });
 }
 const name = "Vercel";
 const slots = {

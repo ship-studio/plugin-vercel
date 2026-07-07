@@ -903,7 +903,8 @@ function VercelToolbar() {
 
         const statusText = statusMatch[1].toUpperCase() as DeploymentStatus;
 
-        const urlMatch = line.match(/(\S+\.vercel\.app)/);
+        // CLI ≥50 prefixes deployment URLs with https:// — capture the bare host
+        const urlMatch = line.match(/(?:https?:\/\/)?([^\s/]+\.vercel\.app)/);
         const url = urlMatch ? urlMatch[1] : '';
 
         const ageMatch = line.match(/^\s*(\S+)/);
@@ -1197,9 +1198,11 @@ https.get({
     const productionUrl = projectStatus.production_url;
     const branch = project.currentBranch || 'main';
     const isMainBranch = branch === 'main' || branch === 'master';
+    // Branch alias format is <project>-git-<branch>-<scope-slug>.vercel.app —
+    // without the scope slug the guessed URL 404s
     const previewUrl =
-      !isMainBranch && projectStatus.project_name
-        ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.vercel.app`
+      !isMainBranch && projectStatus.project_name && projectStatus.vercel_org
+        ? `${projectStatus.project_name}-git-${branch.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}-${projectStatus.vercel_org}.vercel.app`
         : null;
     const actionInProgress = isDisconnecting || isSwitchingAccount;
 
@@ -1563,8 +1566,11 @@ https.get({
       const resolvedTeams = fetchedTeams.map((t) => ({ ...t, id: idMap[t.id] || t.id }));
 
       setTeams(resolvedTeams);
+      // CLI ≥50 refuses to run without an explicit --scope in non-interactive
+      // mode, and personal accounts are themselves teams now — so always
+      // select a concrete scope (current team, else first team).
       const currentTeam = resolvedTeams.find((t) => t.is_current);
-      setSelectedScope(currentTeam ? currentTeam.id : undefined);
+      setSelectedScope(currentTeam ? currentTeam.id : resolvedTeams[0]?.id);
     } catch {
       setTeams([]);
       setSelectedScope(undefined);
@@ -1637,7 +1643,6 @@ https.get({
                         }
                       }}
                     >
-                      <option value="">Personal Account</option>
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.name}
