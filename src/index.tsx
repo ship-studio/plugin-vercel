@@ -627,7 +627,7 @@ function VercelToolbar() {
   useEffect(() => {
     if (hasGitRemote) return;
     const interval = setInterval(async () => {
-      const result = await shell.exec('git', ['remote', '-v']).catch(() => null);
+      const result = await shell.exec('git', ['remote', '-v'], { timeout: 10 }).catch(() => null);
       if (result && result.exit_code === 0 && result.stdout.trim().length > 0) {
         setHasGitRemote(true);
         void checkStatus();
@@ -726,7 +726,7 @@ function VercelToolbar() {
 
     const check = async () => {
       const branch = project.currentBranch || 'main';
-      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`]).catch(() => null);
+      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`], { timeout: 10 }).catch(() => null);
       if (cancelled || !result || result.exit_code !== 0) return;
 
       const sha = result.stdout.trim();
@@ -752,7 +752,7 @@ function VercelToolbar() {
   const checkStatus = async () => {
     try {
       // Check if git remote is configured
-      const remoteResult = await shell.exec('git', ['remote', '-v']);
+      const remoteResult = await shell.exec('git', ['remote', '-v'], { timeout: 10 });
       setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
 
       // Check if vercel CLI is installed
