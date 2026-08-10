@@ -627,7 +627,7 @@ function VercelToolbar() {
   useEffect(() => {
     if (hasGitRemote) return;
     const interval = setInterval(async () => {
-      const result = await shell.exec('git', ['remote', '-v']).catch(() => null);
+      const result = await shell.exec('git', ['remote', '-v'], { timeout: 10 }).catch(() => null);
       if (result && result.exit_code === 0 && result.stdout.trim().length > 0) {
         setHasGitRemote(true);
         void checkStatus();
@@ -725,8 +725,8 @@ function VercelToolbar() {
     let lastRemoteSha: string | null = null;
 
     const check = async () => {
-      const branch = project.currentBranch || 'main';
-      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`]).catch(() => null);
+      const branch = project?.currentBranch || 'main';
+      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`], { timeout: 10 }).catch(() => null);
       if (cancelled || !result || result.exit_code !== 0) return;
 
       const sha = result.stdout.trim();
@@ -752,11 +752,11 @@ function VercelToolbar() {
   const checkStatus = async () => {
     try {
       // Check if git remote is configured
-      const remoteResult = await shell.exec('git', ['remote', '-v']);
+      const remoteResult = await shell.exec('git', ['remote', '-v'], { timeout: 10 });
       setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
 
       // Check if vercel CLI is installed
-      const versionResult = await execTool(shell, 'vercel', ['--version']);
+      const versionResult = await execTool(shell, 'vercel', ['--version'], { timeout: 15 });
       const installed = versionResult.exit_code === 0;
 
       if (!installed) {
@@ -765,7 +765,7 @@ function VercelToolbar() {
       }
 
       // Check if authenticated
-      const whoamiResult = await execTool(shell, 'vercel', ['whoami']);
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 15 });
       const authenticated = whoamiResult.exit_code === 0;
       const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
 
@@ -825,7 +825,7 @@ function VercelToolbar() {
 
           // Get org slug and project name from vercel ls
           // Output may be in stdout, stderr, or both depending on shell proxy
-          const lsResult = await execShell(shell, 'vercel ls --no-color 2>&1').catch(() => null);
+          const lsResult = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15 }).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
             const lsOutput = lsResult.stdout;
             const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
@@ -879,7 +879,7 @@ function VercelToolbar() {
 
   const fetchLatestDeployment = async (): Promise<DeploymentInfo | null> => {
     try {
-      const result = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15000 });
+      const result = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15 });
       if (result.exit_code !== 0) return null;
 
       const lines = result.stdout.split('\n');
@@ -955,7 +955,7 @@ https.get({
     } catch { console.log('{}'); }
   });
 }).on('error', () => console.log('{}'));`;
-      const result = await shell.exec('node', ['-e', script], { timeout: 10000 });
+      const result = await shell.exec('node', ['-e', script], { timeout: 10 });
       if (result.exit_code !== 0) return {};
       return JSON.parse(result.stdout.trim());
     } catch {
@@ -1003,7 +1003,7 @@ https.get({
     } catch { console.log('[]'); }
   });
 }).on('error', () => console.log('[]'));`;
-      const result = await shell.exec('node', ['-e', script, projectId, teamId || ''], { timeout: 10000 });
+      const result = await shell.exec('node', ['-e', script, projectId, teamId || ''], { timeout: 10 });
       if (result.exit_code !== 0) return [];
       return JSON.parse(result.stdout.trim());
     } catch {
@@ -1040,9 +1040,9 @@ https.get({
             // brew, so install via npm directly.
             const brewResult = IS_WINDOWS
               ? { exit_code: 1 }
-              : await execTool(shell, 'brew', ['install', 'vercel-cli']);
+              : await execTool(shell, 'brew', ['install', 'vercel-cli'], { timeout: 600 });
             if (brewResult.exit_code !== 0) {
-              const npmResult = await execTool(shell, 'npm', ['install', '-g', 'vercel']);
+              const npmResult = await execTool(shell, 'npm', ['install', '-g', 'vercel'], { timeout: 600 });
               if (npmResult.exit_code !== 0) {
                 throw new Error('Failed to install via npm');
               }
@@ -1104,7 +1104,7 @@ https.get({
   const handleSwitchAccount = async () => {
     setIsSwitchingAccount(true);
     try {
-      await execTool(shell, 'vercel', ['logout']).catch(() => {});
+      await execTool(shell, 'vercel', ['logout'], { timeout: 15 }).catch(() => {});
       setCliStatus({ installed: true, authenticated: false });
       setProjectStatus(null);
       // Open the interactive terminal for login
@@ -1375,7 +1375,7 @@ https.get({
         if (nextCursor) cmd += ` --next ${nextCursor}`;
         cmd += ' 2>&1';
 
-        const result = await execShell(shell, cmd);
+        const result = await execShell(shell, cmd, { timeout: 30 });
         if (result.exit_code !== 0) break;
 
         const lines = result.stdout.split('\n');
@@ -1429,15 +1429,16 @@ https.get({
       pj.orgSlug = match[1];
       pj.projectName = match[2];
       // Store current account for mismatch detection
-      const whoamiResult = await execTool(shell, 'vercel', ['whoami']);
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 15 });
       if (whoamiResult.exit_code === 0) {
         pj.linkedAccount = whoamiResult.stdout.trim();
       }
       const content = JSON.stringify(pj, null, 2);
-      await shell.exec('node', [
-        '-e',
-        `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`,
-      ]);
+      await shell.exec(
+        'node',
+        ['-e', `require('fs').writeFileSync('.vercel/project.json', ${JSON.stringify(content)})`],
+        { timeout: 10 }
+      );
     } catch {
       // non-critical — checkStatus will still work via vercel ls
     }
@@ -1454,7 +1455,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push('--scope', selectedScope);
       }
-      const linkResult = await execTool(shell, 'vercel', linkArgs, { timeout: 120_000 });
+      const linkResult = await execTool(shell, 'vercel', linkArgs, { timeout: 120 });
       if (linkResult.exit_code !== 0) {
         throw new Error(linkResult.stderr || 'Failed to link project');
       }
@@ -1467,7 +1468,7 @@ https.get({
         if (selectedScope) {
           deployArgs.push('--scope', selectedScope);
         }
-        const deployResult = await execTool(shell, 'vercel', deployArgs, { timeout: 120_000 });
+        const deployResult = await execTool(shell, 'vercel', deployArgs, { timeout: 600 });
         if (deployResult.exit_code === 0) {
           toast('Deployed to Vercel!', 'success');
         } else {
@@ -1498,7 +1499,7 @@ https.get({
       if (selectedScope) {
         linkArgs.push('--scope', selectedScope);
       }
-      const result = await execTool(shell, 'vercel', linkArgs);
+      const result = await execTool(shell, 'vercel', linkArgs, { timeout: 120 });
       if (result.exit_code !== 0) {
         throw new Error(result.stderr || 'Failed to link project');
       }
@@ -1531,7 +1532,7 @@ https.get({
       //   id                           Team name
       // ✔ julianmemberstacks-projects  julianmemberstack's projects
       //   memberstack-team             Memberstack Team
-      const result = await execShell(shell, 'vercel team ls --no-color 2>&1');
+      const result = await execShell(shell, 'vercel team ls --no-color 2>&1', { timeout: 15 });
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(undefined);
