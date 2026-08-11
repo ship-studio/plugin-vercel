@@ -627,7 +627,10 @@ function VercelToolbar() {
   useEffect(() => {
     if (hasGitRemote) return;
     const interval = setInterval(async () => {
-      const result = await shell.exec('git', ['remote', '-v'], { timeout: 10 }).catch(() => null);
+      // 20s: generous for a local git call, but this 3s-cadence poll tolerates
+      // failure by design — a slow disk / busy .git shouldn't trip the host's
+      // timeout error before .catch(() => null) swallows it (ship-studio#661).
+      const result = await shell.exec('git', ['remote', '-v'], { timeout: 20 }).catch(() => null);
       if (result && result.exit_code === 0 && result.stdout.trim().length > 0) {
         setHasGitRemote(true);
         void checkStatus();
@@ -726,7 +729,8 @@ function VercelToolbar() {
 
     const check = async () => {
       const branch = project?.currentBranch || 'main';
-      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`], { timeout: 10 }).catch(() => null);
+      // 20s for the same reason as the git-remote poll above (ship-studio#661).
+      const result = await shell.exec('git', ['rev-parse', `origin/${branch}`], { timeout: 20 }).catch(() => null);
       if (cancelled || !result || result.exit_code !== 0) return;
 
       const sha = result.stdout.trim();
@@ -751,8 +755,9 @@ function VercelToolbar() {
 
   const checkStatus = async () => {
     try {
-      // Check if git remote is configured
-      const remoteResult = await shell.exec('git', ['remote', '-v'], { timeout: 10 });
+      // Check if git remote is configured (20s: local git, but tolerant of
+      // I/O pressure — see the polling call sites, ship-studio#661)
+      const remoteResult = await shell.exec('git', ['remote', '-v'], { timeout: 20 });
       setHasGitRemote(remoteResult.exit_code === 0 && remoteResult.stdout.trim().length > 0);
 
       // Check if vercel CLI is installed
@@ -764,8 +769,9 @@ function VercelToolbar() {
         return;
       }
 
-      // Check if authenticated
-      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 15 });
+      // Check if authenticated. 30s: whoami hits Vercel's API — 15s proved too
+      // tight on slow networks / cold CLI starts (ship-studio#651).
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 30 });
       const authenticated = whoamiResult.exit_code === 0;
       const currentAccount = authenticated ? whoamiResult.stdout.trim() : null;
 
@@ -825,7 +831,8 @@ function VercelToolbar() {
 
           // Get org slug and project name from vercel ls
           // Output may be in stdout, stderr, or both depending on shell proxy
-          const lsResult = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15 }).catch(() => null);
+          // 30s: network round-trip to Vercel's API (ship-studio#651)
+          const lsResult = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 30 }).catch(() => null);
           if (lsResult && lsResult.exit_code === 0) {
             const lsOutput = lsResult.stdout;
             const headerMatch = lsOutput.match(/Deployments?\s+for\s+(\S+)\/(\S+)/);
@@ -879,7 +886,9 @@ function VercelToolbar() {
 
   const fetchLatestDeployment = async (): Promise<DeploymentInfo | null> => {
     try {
-      const result = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 15 });
+      // 30s: network round-trip to Vercel's API; a slow tick degrades to
+      // null (skipped poll) rather than an error (ship-studio#651)
+      const result = await execShell(shell, 'vercel ls --no-color 2>&1', { timeout: 30 });
       if (result.exit_code !== 0) return null;
 
       const lines = result.stdout.split('\n');
@@ -955,7 +964,8 @@ https.get({
     } catch { console.log('{}'); }
   });
 }).on('error', () => console.log('{}'));`;
-      const result = await shell.exec('node', ['-e', script], { timeout: 10 });
+      // 30s: direct HTTPS call to api.vercel.com (ship-studio#651)
+      const result = await shell.exec('node', ['-e', script], { timeout: 30 });
       if (result.exit_code !== 0) return {};
       return JSON.parse(result.stdout.trim());
     } catch {
@@ -1003,7 +1013,8 @@ https.get({
     } catch { console.log('[]'); }
   });
 }).on('error', () => console.log('[]'));`;
-      const result = await shell.exec('node', ['-e', script, projectId, teamId || ''], { timeout: 10 });
+      // 30s: direct HTTPS call to api.vercel.com (ship-studio#651)
+      const result = await shell.exec('node', ['-e', script, projectId, teamId || ''], { timeout: 30 });
       if (result.exit_code !== 0) return [];
       return JSON.parse(result.stdout.trim());
     } catch {
@@ -1104,7 +1115,8 @@ https.get({
   const handleSwitchAccount = async () => {
     setIsSwitchingAccount(true);
     try {
-      await execTool(shell, 'vercel', ['logout'], { timeout: 15 }).catch(() => {});
+      // 30s: logout revokes the token via Vercel's API (ship-studio#651)
+      await execTool(shell, 'vercel', ['logout'], { timeout: 30 }).catch(() => {});
       setCliStatus({ installed: true, authenticated: false });
       setProjectStatus(null);
       // Open the interactive terminal for login
@@ -1429,7 +1441,8 @@ https.get({
       pj.orgSlug = match[1];
       pj.projectName = match[2];
       // Store current account for mismatch detection
-      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 15 });
+      // 30s: whoami hits Vercel's API (ship-studio#651)
+      const whoamiResult = await execTool(shell, 'vercel', ['whoami'], { timeout: 30 });
       if (whoamiResult.exit_code === 0) {
         pj.linkedAccount = whoamiResult.stdout.trim();
       }
@@ -1532,7 +1545,9 @@ https.get({
       //   id                           Team name
       // ✔ julianmemberstacks-projects  julianmemberstack's projects
       //   memberstack-team             Memberstack Team
-      const result = await execShell(shell, 'vercel team ls --no-color 2>&1', { timeout: 15 });
+      // 30s: network round-trip to Vercel's API — 15s produced empty team
+      // lists on slow networks (ship-studio#651)
+      const result = await execShell(shell, 'vercel team ls --no-color 2>&1', { timeout: 30 });
       if (result.exit_code !== 0) {
         setTeams([]);
         setSelectedScope(undefined);
